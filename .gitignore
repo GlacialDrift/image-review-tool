@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and distribution
+build/
+dist/
+*.egg-info/
+
+# PyInstaller
+*.spec
+
+# SQLite database and temp files
+*.db
+*.db-shm
+*.db-wal
+
+# Cache
+cache/
+*.log
+
+# PyCharm project settings
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local config files
+config.ini
