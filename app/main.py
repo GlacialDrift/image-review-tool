@@ -1,4 +1,5 @@
 import getpass, os, tkinter as tk
+import sys
 from tkinter import messagebox
 from PIL import ImageTk
 from pathlib import Path
@@ -15,7 +16,9 @@ class App(tk.Tk):
 
         self.cfg = load_config()
         self.con = connect(self.cfg["DB_PATH"])
-        ensure_schema(self.con, str(Path(__file__).resolve().parents[1] / "schema.sql"))
+        from sys import executable
+        bundle_dir = Path(executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
+        ensure_schema(self.con, str(bundle_dir / "schema.sql"))
 
         self.user = getpass.getuser()
         self.batch_id = None
