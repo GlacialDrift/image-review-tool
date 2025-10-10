@@ -1,4 +1,4 @@
-import hashlib, os, sqlite3
+import hashlib, os, sqlite3, random
 from pathlib import Path
 from app.config import load_config
 from app.db import connect, ensure_schema
@@ -45,14 +45,31 @@ def main():
             try:
                 digest = sha256_file(full)
                 with con:
+                    # existing insert
                     con.execute("""
                         INSERT OR IGNORE INTO images(path, device_id, sha256, registered_at)
                         VALUES (?,?,?, datetime('now'));
                     """, (full, device_id, digest))
+
+                    # mark ~10% as QC
+                    qc_flag = 1 if random.random() < 0.10 else 0
+                    con.execute("UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full))
+
+                    # seed review rows
                     con.execute("""
                         INSERT OR IGNORE INTO reviews(image_id, status)
                         SELECT image_id, 'unassigned' FROM images WHERE path=?;
                     """, (full,))
+
+                    if qc_flag:
+                        # add a second independent row for QC images
+                        con.execute("""
+                            INSERT INTO reviews(image_id, status)
+                            SELECT image_id, 'unassigned' FROM images WHERE path=?
+                            -- defensively avoid creating >2 rows if re-run
+                            AND (SELECT COUNT(*) FROM reviews r WHERE r.image_id = images.image_id) < 2;
+                        """, (full,))
+
                 added += 1
             except Exception as e:
                 print(f"[skip] {full}: {e}")

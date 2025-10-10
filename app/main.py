@@ -1,4 +1,4 @@
-import getpass, io, os, tkinter as tk
+import getpass, os, tkinter as tk
 from tkinter import messagebox
 from PIL import ImageTk
 from pathlib import Path
@@ -30,9 +30,13 @@ class App(tk.Tk):
         self.status = tk.Label(self, anchor="w")
         self.status.pack(fill="x")
 
+        # Accept upper/lowercase, and make sure we get focus
         self.bind("<y>", lambda e: self.mark("yes"))
+        self.bind("<Y>", lambda e: self.mark("yes"))
         self.bind("<n>", lambda e: self.mark("no"))
+        self.bind("<N>", lambda e: self.mark("no"))
         self.bind("<Escape>", lambda e: self.destroy())
+        self.after(50, self.focus_force)  # grab focus
 
         self.new_batch()
 
@@ -52,14 +56,7 @@ class App(tk.Tk):
                 self.destroy()
             return
 
-        image_id, path = self.items[self.index]
-        row = self.con.execute("SELECT device_id FROM images WHERE image_id=?", (image_id,)).fetchone()
-        device_id = row[0] if row else "unknown"
-
-        self.status.configure(
-            text=f"User: {self.user} | Device: {device_id} | "
-                 f"{self.index + 1}/{len(self.items)} | {os.path.basename(path)}"
-        )
+        review_id, image_id, path, device_id, qc_flag = self.items[self.index]
 
         try:
             img = load_image(path)
@@ -67,17 +64,21 @@ class App(tk.Tk):
             tkimg = ImageTk.PhotoImage(ds)
             self.img_label.configure(image=tkimg)
             self.img_label.image = tkimg
-            self.status.configure(text=f"User: {self.user} | Batch: {self.batch_id[:8]} | "
-                                       f"{self.index+1}/{len(self.items)} | {os.path.basename(path)}")
+
+            # ONE status line: includes batch, device, QC tag
+            self.status.configure(
+                text=f"User: {self.user} | Batch: {self.batch_id[:8]} | "
+                     f"Device: {device_id} | {self.index+1}/{len(self.items)} | "
+                     f"{os.path.basename(path)}{' | QC' if qc_flag else ''}"
+            )
         except Exception as e:
             messagebox.showerror("Load error", f"{path}\n{e}")
-            # Skip problematic image
             self.index += 1
             self.refresh()
 
     def mark(self, result: str):
-        image_id, _ = self.items[self.index]
-        record_decision(self.con, image_id, self.user, self.batch_id, result, self.cfg["STANDARD_VERSION"])
+        review_id, image_id, _, _, _ = self.items[self.index]
+        record_decision(self.con, review_id, self.user, self.batch_id, result, self.cfg["STANDARD_VERSION"])
         self.index += 1
         self.refresh()
 
