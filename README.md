@@ -13,7 +13,7 @@ This tool can in principle be used for review of any image set when looking for 
 It was originally intended for review of scrapped manufacturing parts, but nothing within the tool specifies the feature
 being reviewed. Therefore, it is up to the user(s) to define acceptance criteria for the images (e.g. pass/fail, yes/no).
 
-## REVIEW App Download and Use Instructions
+## REVIEW App Download Instructions
 
 1. Download the latest release of the `zip` file on [github](https://github.com/GlacialDrift/image-review-tool/releases).
 2. Extract the zip file to a known location
@@ -31,6 +31,21 @@ being reviewed. Therefore, it is up to the user(s) to define acceptance criteria
 6. Double-click the `.exe` to start
 7. Use `y` and `n` keys on the keyboard for "yes" and "no" logging
 8. QC images are automatically assigned for repeatability testing
+
+## Use Instructions
+
+1. Double-click the `.exe` to start
+2. Press `y` or `n` on the keyboard to mark a part as "yes, observed" or "no, not observed", respectively
+   - Current setup is looking for scrap parts
+   - Can also use `b` or `s` to mark as "bad" or "scrap" (will log as "yes, observed" in the database)
+   - Can also use `g` to mark as "good" (will log as "no, not observed" in the database)
+   - For future users with different use case, update `main.py` to change keybinds
+3. 20 images will be provided for review
+4. After 20 images, you will be asked if you want to continue or stop
+   - Continuing restarts the process with another 20 images
+   - Stopping closes the program 
+   - Double-clicking the `.exe` again in a new "review session" is equivalent to continuing
+5. If you need to stop in the middle of 20 images, press `ESC`. This will delete your in-progress review.
 
 ## Database Setup and Export
 

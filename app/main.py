@@ -25,7 +25,7 @@ class App(tk.Tk):
         self.items = []
         self.index = 0
 
-        self.label = tk.Label(self, text="Press Y / N", font=("Segoe UI", 12))
+        self.label = tk.Label(self, text="If loss of coating is observed, press 'y', 'b', or 's' (for \"yes, observed\", \"bad\", or \"scrap\"), otherwise press 'n' or 'g' (for \"not observed\" or \"good\")", font=("Segoe UI", 12))
         self.label.pack()
         self.img_label = tk.Label(self)
         self.img_label.pack(expand=True)
@@ -34,8 +34,22 @@ class App(tk.Tk):
         self.status.pack(fill="x")
 
         # Accept upper/lowercase, and make sure we get focus
+        # y, b, and s are all acceptable to mark as "yes"
+            # y - "yes observed"
+            # b - "bad part due to observation"
+            # s - "scrap part due to observation"
         self.bind("<y>", lambda e: self.mark("yes"))
         self.bind("<Y>", lambda e: self.mark("yes"))
+        self.bind("<b>", lambda e: self.mark("yes"))
+        self.bind("<B>", lambda e: self.mark("yes"))
+        self.bind("<s>", lambda e: self.mark("yes"))
+        self.bind("<S>", lambda e: self.mark("yes"))
+
+        # n and g are acceptable to mark as "no"
+            # n - "not observed"
+            # g - "good part, no observation"
+        self.bind("<g>", lambda e: self.mark("no"))
+        self.bind("<G>", lambda e: self.mark("no"))
         self.bind("<n>", lambda e: self.mark("no"))
         self.bind("<N>", lambda e: self.mark("no"))
         self.bind("<Escape>", lambda e: self.destroy())

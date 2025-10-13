@@ -1,7 +1,19 @@
-import sqlite3, uuid
+import sqlite3, uuid, os
 
 def connect(db_path: str):
-    con = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+    # Ensure the parent directory exists (SQLite won't create folders)
+    parent = os.path.dirname(db_path)
+    if parent and not os.path.isdir(parent):
+        os.makedirs(parent, exist_ok=True)
+
+    try:
+        con = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+    except sqlite3.OperationalError as e:
+        raise RuntimeError(f"SQLite failed to open: {db_path}\n"
+                           f"Dir exists: {os.path.isdir(parent)} | "
+                           f"Writable: {os.access(parent, os.W_OK)}\n"
+                           f"Original error: {e}") from e
+
     con.execute("PRAGMA journal_mode=WAL;")
     con.execute("PRAGMA foreign_keys=ON;")
     return con
