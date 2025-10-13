@@ -28,6 +28,7 @@ being reviewed. Therefore, it is up to the user(s) to define acceptance criteria
     - Spaces are allowed in the file directories, but quotation marks **should not** be included
     - Paths should be UNC paths (e.g. `\\Shared\Network\Drive\`) and should not include drive letters (e.g. `Z:\`) unless all analysis will be performed on the local machine
     - It is highly recommended that the database live on a SMB share drive to ensure appropriate file locking with the SQLite database
+    - From experience, using forward slashes `/` in path names has been more consistent
 6. Double-click the `.exe` to start
 7. Use `y` and `n` keys on the keyboard for "yes" and "no" logging
 8. QC images are automatically assigned for repeatability testing
