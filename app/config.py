@@ -2,9 +2,15 @@
 import configparser, os, sys
 from pathlib import Path
 
+
 def _bundle_root() -> Path:
     # When frozen by PyInstaller, the executable lives in a folder we control
-    return Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
+    return (
+        Path(sys.executable).parent
+        if getattr(sys, "frozen", False)
+        else Path(__file__).resolve().parents[1]
+    )
+
 
 def load_config():
     root = _bundle_root()

@@ -8,14 +8,17 @@ IMG_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 
 pattern = re.compile(r"^(\d{11})_000\.jpe?g$", re.IGNORECASE)
 
-def sha256_file(path: str, block=1024*1024) -> str:
+
+def sha256_file(path: str, block=1024 * 1024) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while True:
             b = f.read(block)
-            if not b: break
+            if not b:
+                break
             h.update(b)
     return h.hexdigest()
+
 
 def main():
     cfg = load_config()
@@ -46,29 +49,40 @@ def main():
                 digest = sha256_file(full)
                 with con:
                     # existing insert
-                    con.execute("""
+                    con.execute(
+                        """
                         INSERT OR IGNORE INTO images(path, device_id, sha256, registered_at)
                         VALUES (?,?,?, datetime('now'));
-                    """, (full, device_id, digest))
+                    """,
+                        (full, device_id, digest),
+                    )
 
                     # mark ~10% as QC
                     qc_flag = 1 if random.random() < 0.10 else 0
-                    con.execute("UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full))
+                    con.execute(
+                        "UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full)
+                    )
 
                     # seed review rows
-                    con.execute("""
+                    con.execute(
+                        """
                         INSERT OR IGNORE INTO reviews(image_id, status)
                         SELECT image_id, 'unassigned' FROM images WHERE path=?;
-                    """, (full,))
+                    """,
+                        (full,),
+                    )
 
                     if qc_flag:
                         # add a second independent row for QC images
-                        con.execute("""
+                        con.execute(
+                            """
                             INSERT INTO reviews(image_id, status)
                             SELECT image_id, 'unassigned' FROM images WHERE path=?
                             -- defensively avoid creating >2 rows if re-run
                             AND (SELECT COUNT(*) FROM reviews r WHERE r.image_id = images.image_id) < 2;
-                        """, (full,))
+                        """,
+                            (full,),
+                        )
 
                 added += 1
             except Exception as e:
@@ -76,6 +90,7 @@ def main():
 
     print(f"Added {added} qualifying images.")
     print(f"Skipped {skipped} non-_000 files.")
+
 
 if __name__ == "__main__":
     main()
