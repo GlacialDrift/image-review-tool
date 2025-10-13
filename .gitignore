@@ -32,5 +32,6 @@ cache/
 .DS_Store
 Thumbs.db
 
-# Local config files
+# Local Config and Visual Standard files
 config.ini
+*.pdf
