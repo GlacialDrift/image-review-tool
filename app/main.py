@@ -4,9 +4,9 @@ from tkinter import messagebox
 from PIL import ImageTk
 from pathlib import Path
 
-from .config import load_config
-from .db import connect, ensure_schema, assign_batch, record_decision
-from .io_image import load_image, downscale_for_screen
+from app.config import load_config
+from app.db import connect, ensure_schema, assign_batch, record_decision
+from app.io_image import load_image, downscale_for_screen
 
 class App(tk.Tk):
     def __init__(self):

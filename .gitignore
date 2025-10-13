@@ -35,3 +35,4 @@ Thumbs.db
 # Local Config and Visual Standard files
 config.ini
 *.pdf
+*.zip
