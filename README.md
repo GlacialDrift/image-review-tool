@@ -13,7 +13,7 @@ This tool can in principle be used for review of any image set when looking for 
 It was originally intended for review of scrapped manufacturing parts, but nothing within the tool specifies the feature
 being reviewed. Therefore, it is up to the user(s) to define acceptance criteria for the images (e.g. pass/fail, yes/no).
 
-## REVIEW App Download Instructions
+## REVIEW App Download and Use Instructions
 
 1. Download the latest release of the `zip` file on [github](https://github.com/GlacialDrift/image-review-tool/releases).
 2. Extract the zip file to a known location

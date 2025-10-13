@@ -18,6 +18,6 @@ def load_config():
         "DB_PATH": expand(cfg["paths"]["db_path"]),
         "IMAGE_ROOT": expand(cfg["paths"]["image_root"]),
         "CACHE_DIR": expand(cfg["paths"]["cache_dir"]),
-        "STANDARD_VERSION": cfg["app"].get("standard_version", "v1.0"),
+        "STANDARD_VERSION": cfg["app"].get("standard_version", "v0.1.0"),
         "BATCH_SIZE": cfg["app"].getint("batch_size", 20),
     }
