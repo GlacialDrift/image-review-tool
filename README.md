@@ -15,7 +15,7 @@ being reviewed. Therefore, it is up to the user(s) to define acceptance criteria
 
 ## ImageReview App Download Instructions
 
-1. Download the latest release of the `zip` file on [github](https://github.com/GlacialDrift/image-review-tool/releases).
+1. Download the latest release of the `ImageReview.zip` file on [github](https://github.com/GlacialDrift/image-review-tool/releases).
 2. Extract the zip file to a known location
 3. Create a copy of the `config.example.ini` file
 4. Rename the copy to `config.ini`
