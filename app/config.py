@@ -11,6 +11,16 @@ def _bundle_root() -> Path:
         else Path(__file__).resolve().parents[1]
     )
 
+def _getint(section, key, cfg):
+    try:
+        return cfg[section].getint(key)
+    except Exception:
+        return None
+
+def _split_keys(cfg, section, option, default):
+    if section in cfg and option in cfg[section]:
+        return [k.strip() for k in cfg[section][option].split(",") if k.strip()]
+    return default
 
 def load_config():
     root = _bundle_root()
@@ -26,10 +36,33 @@ def load_config():
         )
 
     expand = os.path.expandvars
+
+    image = {}
+    if "image" in cfg:
+        image = {
+            "crop_width": _getint("image", "crop_width", cfg),
+            "crop_height": _getint("image","crop_height", cfg),
+            "h_align": cfg["image"].get("h_align", "center").lower(),
+            "v_align": cfg["image"].get("v_align", "center").lower(),
+            "max_display_side": cfg["image"].getint("max_display_side", 1400),
+        }
+
+    yes_keys = _split_keys(cfg, "keybinds", "yes", ["y","b","s"])
+    no_keys = _split_keys(cfg, "keybinds", "no", ["n","g"])
+    rs = cfg["review"].getint("random_seed", 42)
+
+    qc_rate = float(cfg["review"].get("qc_rate","0.10")) if "review" in cfg else 0.10
+    if qc_rate < 0.0 or qc_rate > 1.0:
+        raise ValueError("QC rate must be between 0.0 and 1.0")
+
     return {
         "DB_PATH": expand(cfg["paths"]["db_path"]),
         "IMAGE_ROOT": expand(cfg["paths"]["image_root"]),
         "CACHE_DIR": expand(cfg["paths"]["cache_dir"]),
         "STANDARD_VERSION": cfg["app"].get("standard_version", "v1.0"),
         "BATCH_SIZE": cfg["app"].getint("batch_size", 20),
+        "QC_RATE": qc_rate,
+        "KEYBINDS": {"yes": yes_keys, "no": no_keys},
+        "RANDOM_SEED": rs,
+        "IMAGE": image,
     }

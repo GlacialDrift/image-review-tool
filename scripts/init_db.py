@@ -4,7 +4,7 @@ from app.config import load_config
 from app.db import connect, ensure_schema
 import re
 
-IMG_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
+IMG_EXT = {".jpg", ".jpeg"}
 
 pattern = re.compile(r"^(\d{11})_000\.jpe?g$", re.IGNORECASE)
 
@@ -22,6 +22,9 @@ def sha256_file(path: str, block=1024 * 1024) -> str:
 
 def main():
     cfg = load_config()
+    qc_rate = cfg["QC_RATE"]
+    random.seed(cfg.get("RANDOM_SEED"))
+
     con = connect(cfg["DB_PATH"])
     ensure_schema(con, str(Path(__file__).resolve().parents[1] / "schema.sql"))
 
@@ -58,7 +61,7 @@ def main():
                     )
 
                     # mark ~10% as QC
-                    qc_flag = 1 if random.random() < 0.10 else 0
+                    qc_flag = 1 if random.random() < qc_rate else 0
                     con.execute(
                         "UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full)
                     )

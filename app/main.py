@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.config import load_config
 from app.db import connect, ensure_schema, assign_batch, record_decision
-from app.io_image import load_image, downscale_for_screen
+from app.io_image import load_image, prepare_for_display
 
 
 class App(tk.Tk):
@@ -16,6 +16,22 @@ class App(tk.Tk):
         self.state("zoomed")
 
         self.cfg = load_config()
+        yes_keys = self.cfg["KEYBINDS"]["yes"]
+        no_keys = self.cfg["KEYBINDS"]["no"]
+
+        # Bind "yes" keys (both cases)
+        for k in yes_keys:
+            self.bind(f"<{k}>", lambda e, r="yes": self.mark(r))
+            self.bind(f"<{k.upper()}>", lambda e, r="yes": self.mark(r))
+
+        # Bind "no" keys (both cases)
+        for k in no_keys:
+            self.bind(f"<{k}>", lambda e, r="no": self.mark(r))
+            self.bind(f"<{k.upper()}>", lambda e, r="no": self.mark(r))
+
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.after(50, self.focus_force)
+
         self.con = connect(self.cfg["DB_PATH"])
         from sys import executable
 
@@ -43,28 +59,6 @@ class App(tk.Tk):
         self.status = tk.Label(self, anchor="w")
         self.status.pack(fill="x")
 
-        # Accept upper/lowercase, and make sure we get focus
-        # y, b, and s are all acceptable to mark as "yes"
-        # y - "yes observed"
-        # b - "bad part due to observation"
-        # s - "scrap part due to observation"
-        self.bind("<y>", lambda e: self.mark("yes"))
-        self.bind("<Y>", lambda e: self.mark("yes"))
-        self.bind("<b>", lambda e: self.mark("yes"))
-        self.bind("<B>", lambda e: self.mark("yes"))
-        self.bind("<s>", lambda e: self.mark("yes"))
-        self.bind("<S>", lambda e: self.mark("yes"))
-
-        # n and g are acceptable to mark as "no"
-        # n - "not observed"
-        # g - "good part, no observation"
-        self.bind("<g>", lambda e: self.mark("no"))
-        self.bind("<G>", lambda e: self.mark("no"))
-        self.bind("<n>", lambda e: self.mark("no"))
-        self.bind("<N>", lambda e: self.mark("no"))
-        self.bind("<Escape>", lambda e: self.destroy())
-        self.after(50, self.focus_force)  # grab focus
-
         self.new_batch()
 
     def new_batch(self):
@@ -90,7 +84,7 @@ class App(tk.Tk):
 
         try:
             img = load_image(path)
-            ds = downscale_for_screen(img)
+            ds = prepare_for_display(img, self.cfg.get("IMAGE"))
             tkimg = ImageTk.PhotoImage(ds)
             self.img_label.configure(image=tkimg)
             self.img_label.image = tkimg

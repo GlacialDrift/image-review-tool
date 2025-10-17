@@ -8,7 +8,7 @@ def connect(db_path: str):
         os.makedirs(parent, exist_ok=True)
 
     try:
-        con = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+        con = sqlite3.connect(db_path, timeout=15, isolation_level=None)
     except sqlite3.OperationalError as e:
         raise RuntimeError(
             f"SQLite failed to open: {db_path}\n"
