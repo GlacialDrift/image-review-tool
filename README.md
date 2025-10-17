@@ -58,3 +58,6 @@ To export the database after review of images, download the source code of this 
 This will generate a csv file within the python project structure that can be further utilized.
 
 SQLite lives on the SMB share; WAL mode enabled for multi-user safety.
+
+## Build
+pyinstaller --onefile --noconsole --name ImageReview --paths . --add-data "schema.sql;." --add-data "config.example.ini;." run_app.py
