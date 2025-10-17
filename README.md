@@ -1,6 +1,6 @@
 ---
 Author: Mike Harris
-Version: 0.1.0
+Version: 0.2.0
 Github: https://github.com/GlacialDrift/image-review-tool
 ---
 # Image Review Tool (SQLite + Tk)
