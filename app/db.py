@@ -21,7 +21,7 @@ All mutations are wrapped in short explicit transactions to avoid race
 conditions during multi-user access.
 """
 
-import sqlite3, uuid, os
+import sqlite3, uuid, os, random
 
 # ---------------------------------------------------------------------------
 # Schema migration helpers
@@ -253,6 +253,7 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
       SELECT r.review_id, i.image_id, i.path, i.device_id, i.qc_flag
       FROM reviews r JOIN images i ON i.image_id = r.image_id
       WHERE r.review_id IN ({",".join("?" * len(picked_ids))})
+      ORDER BY RANDOM()
     """
     items = con.execute(q, picked_ids).fetchall()
     # return [(review_id, image_id, path, device_id, qc_flag), ...]
