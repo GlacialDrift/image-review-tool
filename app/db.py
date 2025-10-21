@@ -43,6 +43,15 @@ def run_migrations(con):
                 ALTER TABLE reviews_new RENAME TO reviews;
 
                 PRAGMA user_version=2;
+                
+                CREATE TABLE IF NOT EXISTS annotations (
+                    ann_id     INTEGER PRIMARY KEY,
+                    review_id  INTEGER NOT NULL REFERENCES reviews(review_id),
+                    x_norm     REAL NOT NULL,  -- 0..1 in original image space
+                    y_norm     REAL NOT NULL,  -- 0..1 in original image space
+                    button     TEXT CHECK(button IN ('left','right')) NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 COMMIT;
             """)
         else:
@@ -186,4 +195,14 @@ def record_decision(
             WHERE review_id=? AND assigned_to=? AND batch_id=?;
         """,
             (result, standard_version, review_id, user, batch_id),
+        )
+
+def add_annotation(con, review_id: int, x_norm: float, y_norm: float, button: str):
+    with con:
+        con.execute(
+            """
+            INSERT INTO annotations(review_id, x_norm, y_norm, button, created_at)
+            VALUES (?, ?, ?, ?, datetime('now'));
+            """,
+            (review_id, float(x_norm), float(y_norm), button),
         )

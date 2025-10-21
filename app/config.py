@@ -69,6 +69,17 @@ def load_config():
     if qc_rate < 0.0 or qc_rate > 1.0:
         raise ValueError("QC rate must be between 0.0 and 1.0")
 
+    mouse = {"left": {"action": None, "point": False},
+             "right": {"action": None, "point": False}}
+    if "mouse" in cfg:
+        for btn in ("left", "right"):
+            if btn in cfg["mouse"]:
+                tokens = [t.strip().lower() for t in cfg["mouse"][btn].split(",") if t.strip()]
+                # 'point' is a flag, anything else we treat as the result label
+                action = next((t for t in tokens if t != "point"), None)
+                point = "point" in tokens
+                mouse[btn] = {"action": action, "point": point}
+
     return {
         "DB_PATH": expand(cfg["paths"]["db_path"]),
         "IMAGE_ROOT": expand(cfg["paths"]["image_root"]),
@@ -80,4 +91,5 @@ def load_config():
         "RANDOM_SEED": rs,
         "IMAGE": image,
         "RESULT_BINDINGS": result_bindings,
+        "MOUSE": mouse,
     }

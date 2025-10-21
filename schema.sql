@@ -27,3 +27,12 @@ CREATE TABLE IF NOT EXISTS qc_reviews (
   result     TEXT CHECK(result IN ('yes','no')),
   decided_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS annotations (
+  ann_id     INTEGER PRIMARY KEY,
+  review_id  INTEGER NOT NULL REFERENCES reviews(review_id),
+  x_norm     REAL NOT NULL,  -- 0..1 in original image space
+  y_norm     REAL NOT NULL,  -- 0..1 in original image space
+  button     TEXT CHECK(button IN ('left','right')) NOT NULL,
+  created_at TEXT NOT NULL
+);
