@@ -1,3 +1,31 @@
+"""Main Tkinter application for the Image Review Tool.
+
+This module implements the GUI workflow for multi-user image review. It handles:
+  * Database connectivity and schema migration on startup.
+  * Keyboard and mouse bindings for marking results.
+  * Batch management (assigning new images, releasing unfinished ones).
+  * Optional click-based annotations mapped to normalized coordinates.
+  * Dynamic UI hints generated from the loaded configuration.
+
+Typical startup sequence:
+  1. Load configuration via `app.config.load_config()`.
+  2. Connect to SQLite database (`app.db.connect`).
+  3. Ensure schema and run any migrations.
+  4. Assign a batch of unreviewed images.
+  5. Display images and handle user input until batch complete or exit.
+
+Keyboard flow:
+  - Result keys (yes/no/skip/other) → record decision + advance.
+  - Escape or window close → release all undecided items and exit.
+
+Mouse flow (configurable in [mouse] section):
+  - Left/right click → map display coordinates to normalized image space,
+    optionally record an annotation, then mark result and advance.
+
+Author: Mike Harris
+Version: 0.3.0
+"""
+
 import getpass, os, tkinter as tk
 import sys
 from tkinter import messagebox
@@ -11,15 +39,28 @@ from app.io_image import load_image, prepare_for_display
 
 
 class App(tk.Tk):
+    """Main Tkinter window for image review.
+
+    Handles lifecycle of a review session, including:
+      - Key and mouse event bindings.
+      - Loading and displaying images.
+      - Recording decisions and annotations.
+      - Managing batch transitions.
+    """
+
     def __init__(self):
+        """Initialize the GUI and connect to the database."""
         super().__init__()
         self.title("Image Review")
         self.state("zoomed")
 
+        # ------------------------------------------------------------------
+        # Configuration and key bindings
+        # ------------------------------------------------------------------
         self.cfg = load_config()
         bindings = self.cfg["RESULT_BINDINGS"]
 
-        # Bind all key shortcuts
+        # Dynamically bind all configured key shortcuts (e.g., yes/no/skip)
         for result, keys in bindings.items():
             for k in keys:
                 self._bind_result_key(k, result)
@@ -28,7 +69,9 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._abort_and_close)  # handle window close
         self.after(50, self.focus_force)
 
-        # Database connection
+        # ------------------------------------------------------------------
+        # Database initialization
+        # ------------------------------------------------------------------
         self.con = connect(self.cfg["DB_PATH"])
         from sys import executable
         bundle_dir = (
@@ -44,30 +87,40 @@ class App(tk.Tk):
         self.items = []
         self.index = 0
 
-        # UI
+        # ------------------------------------------------------------------
+        # UI Layout
+        # ------------------------------------------------------------------
         self.label = tk.Label(self, text=self._instruction_text(), font=("Segoe UI", 12))
         self.label.pack()
 
         self.img_label = tk.Label(self)
         self.img_label.pack(expand=True)
 
-        # Mouse bindings on the image widget
+        # Mouse bindings for click-to-annotate or click-to-classify
         self.img_label.bind("<Button-1>", self._on_left_click)
         self.img_label.bind("<Button-3>", self._on_right_click)
 
-        # Buttons row
+        # Control row (currently only Skip button)
         btn_row = tk.Frame(self)
         btn_row.pack(pady=6)
         tk.Button(btn_row, text="Skip", command=lambda: self.mark("skip")).pack(side="left")
 
+        # Status bar
         self.status = tk.Label(self, anchor="w")
         self.status.pack(fill="x")
 
+        # Internal state for current display transform (used for click mapping)
         self._current_transform = None  # holds transform info for current image
         self._current_image_size = None  # displayed size for offset calc
+
+        # Fetch the first batch
         self.new_batch()
 
+    # ----------------------------------------------------------------------
+    # UI text helpers
+    # ----------------------------------------------------------------------
     def _instruction_text(self):
+        """Generate dynamic instruction text from configuration."""
         def pretty(binds):
             parts = []
             for res, keys in binds.items():
@@ -84,7 +137,11 @@ class App(tk.Tk):
         hint = " | ".join(mparts) if mparts else "mouse: (not configured)"
         return f"Keys — {pretty(self.cfg['RESULT_BINDINGS'])}  ||  {hint}  ||  Esc: release & exit"
 
+    # ----------------------------------------------------------------------
+    # Core workflow
+    # ----------------------------------------------------------------------
     def refresh(self):
+        """Display the current image or advance to the next batch if finished."""
         if self.index >= len(self.items):
             if messagebox.askyesno("Batch complete", "Request another set?"):
                 self.new_batch()
@@ -119,10 +176,20 @@ class App(tk.Tk):
             self.index += 1
             self.refresh()
 
+    # ----------------------------------------------------------------------
+    # Coordinate mapping for click annotations
+    # ----------------------------------------------------------------------
     def _map_click_to_original(self, cx: int, cy: int):
-        """
-        Convert a click at display coords (cx,cy) to normalized (x,y) in original image space.
-        Handles crop + scale and centers if label > image (we pin label size to image, but keep this robust).
+        """Convert a click at display coordinates to normalized (x,y) in original image space.
+
+        Args:
+            cx: X coordinate of the mouse click within the label widget.
+            cy: Y coordinate of the mouse click within the label widget.
+
+        Returns:
+            tuple[float, float] or None:
+                (x_norm, y_norm) in [0,1] relative to the original image,
+                or None if the click lies outside the image area.
         """
         if not self._current_transform:
             return None
@@ -149,13 +216,19 @@ class App(tk.Tk):
         # normalize 0..1 in original image
         return max(0.0, min(1.0, x_orig / W)), max(0.0, min(1.0, y_orig / H))
 
+    # ----------------------------------------------------------------------
+    # Mouse event handlers
+    # ----------------------------------------------------------------------
     def _on_left_click(self, event):
+        """Handle left mouse button click (primary action)."""
         self._handle_click(event, button="left")
 
     def _on_right_click(self, event):
+        """Handle right mouse button click (secondary action)."""
         self._handle_click(event, button="right")
 
     def _handle_click(self, event, button: str):
+        """Handle click events for left/right buttons per configuration."""
         cfg = self.cfg["MOUSE"].get(button, {})
         action = cfg.get("action")
         want_point = cfg.get("point", False)
@@ -177,7 +250,11 @@ class App(tk.Tk):
         # mark decision and advance
         self.mark(action)
 
+    # ----------------------------------------------------------------------
+    # Batch control
+    # ----------------------------------------------------------------------
     def _abort_and_close(self):
+        """Release any in-progress items back to the pool and close the app."""
         if self.batch_id:
             try:
                 from app.db import release_batch
@@ -187,6 +264,7 @@ class App(tk.Tk):
         self.destroy()
 
     def _bind_result_key(self, key: str, result: str):
+        """Bind a keyboard key (and optionally uppercase variant) to a result label."""
         k = key.strip()
         if k == " ":
             k = "space"      # normalize literal space to Tk keysym
@@ -199,6 +277,7 @@ class App(tk.Tk):
             self.bind(seq, lambda e, r=result: self.mark(r))
 
     def new_batch(self):
+        """Fetch a new set of unassigned reviews and reset progress."""
         self.batch_id, self.items = assign_batch(
             self.con, self.user, self.cfg["BATCH_SIZE"]
         )
@@ -209,7 +288,11 @@ class App(tk.Tk):
             return
         self.refresh()
 
+    # ----------------------------------------------------------------------
+    # Decision recording
+    # ----------------------------------------------------------------------
     def mark(self, result: str):
+        """Record a decision for the current image and move to the next."""
         review_id, image_id, _, _, _ = self.items[self.index]
         record_decision(
             self.con,

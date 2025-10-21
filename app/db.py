@@ -1,12 +1,56 @@
+"""Database utilities for the Image Review Tool.
+
+This module provides all data access and schema-evolution logic for the
+SQLite database. It is the single point of contact between application logic
+and the underlying database, ensuring that reads and writes are consistent,
+atomic, and concurrency-safe.
+
+Responsibilities:
+  * Open and configure database connections (enabling WAL and foreign keys).
+  * Initialize or upgrade the schema (`ensure_schema`, `run_migrations`).
+  * Handle batch assignment (`assign_batch`) and decision recording.
+  * Manage review rollback (`release_batch`) when a session is canceled.
+  * Persist user click annotations (`add_annotation`).
+
+SQLite settings:
+  * `isolation_level=None` → autocommit mode.
+  * WAL (Write-Ahead Logging) → safe concurrent writes over SMB shares.
+  * `PRAGMA foreign_keys=ON` → enforces referential integrity.
+
+All mutations are wrapped in short explicit transactions to avoid race
+conditions during multi-user access.
+"""
+
 import sqlite3, uuid, os
 
+# ---------------------------------------------------------------------------
+# Schema migration helpers
+# ---------------------------------------------------------------------------
+
 def _get_user_version(con):
+    """Retrieve the current schema version from SQLite PRAGMA."""
     return con.execute("PRAGMA user_version;").fetchone()[0]
 
 def _set_user_version(con, v: int):
+    """Set the schema version number in SQLite PRAGMA."""
     con.execute(f"PRAGMA user_version={v};")
 
 def run_migrations(con):
+    """Apply incremental migrations to the database schema.
+
+    Uses SQLite's `PRAGMA user_version` to track applied migrations.
+    Each migration block should be idempotent and bump the version once
+    successfully applied.
+
+    Current migrations:
+      v<2 → v=2
+        - Remove the CHECK constraint restricting `reviews.result`
+          to ('yes','no') to allow arbitrary result labels.
+        - Create the `annotations` table if missing.
+
+    Args:
+        con: Active SQLite connection (autocommit enabled).
+    """
     v = _get_user_version(con)
 
     # --- Migration to v=2: remove CHECK on reviews.result ---
@@ -58,22 +102,27 @@ def run_migrations(con):
             # Already in new shape; just bump the version without extra COMMITs
             _set_user_version(con, 2)
 
-def release_batch(con, user: str, batch_id: str):
-    """
-    Revert any in-progress (undecided) reviews in this batch back to 'unassigned'.
-    Clears assignment and batch_id so they can be picked up again.
-    """
-    with con:
-        con.execute(
-            """
-            UPDATE reviews
-            SET status='unassigned', assigned_to=NULL, batch_id=NULL
-            WHERE batch_id=? AND assigned_to=? AND status='in_progress';
-            """,
-            (batch_id, user),
-        )
+
+
+# ---------------------------------------------------------------------------
+# Core connection and schema utilities
+# ---------------------------------------------------------------------------
 
 def connect(db_path: str):
+    """Open a SQLite connection with standard PRAGMA settings.
+
+    Ensures parent directories exist before opening, and configures WAL and
+    foreign-key enforcement. Connection is autocommit by default.
+
+    Args:
+        db_path: Absolute or relative path to the SQLite database file.
+
+    Returns:
+        sqlite3.Connection: Configured database connection.
+
+    Raises:
+        RuntimeError: If SQLite cannot open the database.
+    """
     # Ensure the parent directory exists (SQLite won't create folders)
     parent = os.path.dirname(db_path)
     if parent and not os.path.isdir(parent):
@@ -95,11 +144,37 @@ def connect(db_path: str):
 
 
 def ensure_schema(con, schema_path: str):
+    """Create all tables if they don't exist using the provided schema.
+
+    Args:
+        con: SQLite connection.
+        schema_path: Path to `schema.sql`.
+    """
     with open(schema_path, "r", encoding="utf-8") as f:
         con.executescript(f.read())
 
+# ---------------------------------------------------------------------------
+# Review workflow management
+# ---------------------------------------------------------------------------
 
 def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
+    """Assign a new batch of reviews to a user.
+
+    Selects up to `n` unassigned review rows, balancing QC and non-QC items
+    based on `qc_rate`, and marks them as `in_progress` for this user.
+
+    Args:
+        con: SQLite connection.
+        user: Username requesting the batch.
+        n: Number of images to review.
+        qc_rate: Fraction of QC items desired.
+
+    Returns:
+        tuple[str, list[tuple]]:
+            (batch_id, items)
+            batch_id — UUID identifying this batch
+            items — [(review_id, image_id, path, device_id, qc_flag), ...]
+    """
     batch_id = str(uuid.uuid4())
     target_qc = max(1, round(n * qc_rate))
     target_non = n - target_qc
@@ -183,10 +258,40 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
     # return [(review_id, image_id, path, device_id, qc_flag), ...]
     return batch_id, items
 
+def release_batch(con, user: str, batch_id: str):
+    """Release any 'in_progress' reviews for this batch back to the pool.
+
+    Used when a reviewer exits early (e.g., presses Esc) to ensure their
+    uncompleted items are not locked indefinitely.
+
+    Args:
+        con: SQLite connection.
+        user: Username releasing the batch.
+        batch_id: The batch UUID currently in progress.
+    """
+    with con:
+        con.execute(
+            """
+            UPDATE reviews
+            SET status='unassigned', assigned_to=NULL, batch_id=NULL
+            WHERE batch_id=? AND assigned_to=? AND status='in_progress';
+            """,
+            (batch_id, user),
+        )
 
 def record_decision(
     con, review_id: int, user: str, batch_id: str, result: str, standard_version: str
 ):
+    """Mark a review as completed and record the decision.
+
+    Args:
+        con: SQLite connection.
+        review_id: ID of the review to finalize.
+        user: Username making the decision.
+        batch_id: Active batch identifier.
+        result: Decision label (e.g., 'yes', 'no', 'skip').
+        standard_version: Current app or evaluation standard version.
+    """
     with con:
         con.execute(
             """
@@ -198,6 +303,17 @@ def record_decision(
         )
 
 def add_annotation(con, review_id: int, x_norm: float, y_norm: float, button: str):
+    """Insert a spatial annotation (click) for a review.
+
+    Each record represents one user click, stored with normalized coordinates.
+
+    Args:
+        con: SQLite connection.
+        review_id: ID of the review associated with the click.
+        x_norm: Horizontal position in normalized [0,1] image space.
+        y_norm: Vertical position in normalized [0,1] image space.
+        button: 'left' or 'right' — the mouse button clicked.
+    """
     with con:
         con.execute(
             """

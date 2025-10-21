@@ -1,3 +1,31 @@
+"""Database initialization and ingestion for the Image Review Tool.
+
+This script scans the configured image root, filters filenames by a strict
+pattern, inserts image metadata into the database, and seeds the review queue.
+Approximately a configurable fraction of images are flagged as QC (duplicate
+review) and receive a second review row to enable inter-rater consistency checks.
+
+Usage:
+    python -m init_db
+or:
+    python init_db.py
+
+Behavior:
+  * Reads paths and parameters from `config.ini` via `app.config.load_config()`.
+  * Ensures the schema exists and applies any migrations.
+  * Walks all subfolders under `IMAGE_ROOT`.
+  * Accepts only *.jpg / *.jpeg files whose names match `(\d{11})_000.jpg`.
+  * Inserts each unique image into `images` with a SHA-256 digest.
+  * Flags ~QC_RATE of images as QC duplicates and seeds two review rows.
+  * Seeds exactly one review row for non-QC images.
+  * Re-running is idempotent: existing images/reviews are not duplicated.
+
+Design notes:
+  * The SHA-256 is used for integrity/duplicate detection and auditing.
+  * The filename regex extracts an 11-digit device_id for later reporting.
+  * All timestamps are UTC (`datetime('now')` in SQLite).
+"""
+
 import hashlib, os, sqlite3, random
 from pathlib import Path
 from app.config import load_config
@@ -10,6 +38,20 @@ pattern = re.compile(r"^(\d{11})_000\.jpe?g$", re.IGNORECASE)
 
 
 def sha256_file(path: str, block=1024 * 1024) -> str:
+    """Compute the SHA-256 content hash of a file.
+
+    Reads the file in fixed-size blocks to avoid excessive memory use.
+
+    Args:
+        path: Absolute or relative filesystem path to the file.
+        block: Read size in bytes for each chunk (defaults to 1 MiB).
+
+    Returns:
+        Hex-encoded SHA-256 digest string of the file contents.
+
+    Raises:
+        OSError: If the file cannot be opened/read.
+    """
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while True:
@@ -21,6 +63,31 @@ def sha256_file(path: str, block=1024 * 1024) -> str:
 
 
 def main():
+    """Scan the image root and seed the database with images and review rows.
+
+    Steps:
+      1) Load configuration (paths, QC rate, random seed).
+      2) Connect to SQLite, ensure schema, and run migrations.
+      3) Recursively walk the image root and filter acceptable files.
+      4) For each matching file:
+         - Insert into `images` if not present (path, device_id, sha256, timestamp).
+         - Randomly flag as QC with probability QC_RATE.
+         - Seed one `reviews` row (status='unassigned').
+         - If QC, seed a second independent `reviews` row (still 'unassigned'),
+           but guard against >2 rows on re-runs.
+
+    Logging:
+      Prints counts of added and skipped files for quick operator feedback.
+
+    Idempotency:
+      Uses `INSERT OR IGNORE` and a defensive LIMIT to prevent duplication if
+      re-run against the same dataset.
+
+    Raises:
+      RuntimeError: If the database cannot be opened.
+      sqlite3.Error: On unexpected SQL errors.
+      OSError: If files cannot be read for hashing.
+    """
     cfg = load_config()
     qc_rate = cfg["QC_RATE"]
     random.seed(cfg.get("RANDOM_SEED"))
