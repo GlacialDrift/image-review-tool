@@ -15,7 +15,7 @@ def main():
     with open("decisions.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(
-            ["device_id", "review id", "image id", "path", "user", "review batch", "timestamp", "Loss of Coating Observed?", "ImageReview_version", "QC"]
+            ["device_id", "review id", "image id", "path", "user", "review batch", "timestamp", "Result", "ImageReview_version", "QC"]
         )
         w.writerows(rows)
     print("Wrote decisions.csv")

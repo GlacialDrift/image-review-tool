@@ -1,5 +1,53 @@
 import sqlite3, uuid, os
 
+def _get_user_version(con):
+    return con.execute("PRAGMA user_version;").fetchone()[0]
+
+def _set_user_version(con, v: int):
+    con.execute(f"PRAGMA user_version={v};")
+
+def run_migrations(con):
+    v = _get_user_version(con)
+
+    # --- Migration to v=2: remove CHECK on reviews.result ---
+    if v < 2:
+        row = con.execute("""
+            SELECT sql FROM sqlite_master
+            WHERE type='table' AND name='reviews'
+        """).fetchone()
+        sql = row[0] if row else ""
+
+        # Old schema had: result TEXT CHECK(result IN ('yes','no'))
+        if "result" in sql and "CHECK" in sql and "'yes'" in sql and "'no'" in sql:
+            # Do ALL transactional work inside one executescript block
+            con.executescript("""
+                BEGIN IMMEDIATE;
+
+                CREATE TABLE reviews_new (
+                  review_id        INTEGER PRIMARY KEY,
+                  image_id         INTEGER NOT NULL REFERENCES images(image_id),
+                  status           TEXT NOT NULL CHECK(status IN ('unassigned','in_progress','done')),
+                  assigned_to      TEXT,
+                  batch_id         TEXT,
+                  result           TEXT,
+                  standard_version TEXT,
+                  decided_at       TEXT
+                );
+
+                INSERT INTO reviews_new
+                  (review_id,image_id,status,assigned_to,batch_id,result,standard_version,decided_at)
+                SELECT review_id,image_id,status,assigned_to,batch_id,result,standard_version,decided_at
+                FROM reviews;
+
+                DROP TABLE reviews;
+                ALTER TABLE reviews_new RENAME TO reviews;
+
+                PRAGMA user_version=2;
+                COMMIT;
+            """)
+        else:
+            # Already in new shape; just bump the version without extra COMMITs
+            _set_user_version(con, 2)
 
 def connect(db_path: str):
     # Ensure the parent directory exists (SQLite won't create folders)

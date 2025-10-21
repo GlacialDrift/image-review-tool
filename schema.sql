@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   status          TEXT NOT NULL CHECK(status IN ('unassigned','in_progress','done')),
   assigned_to     TEXT,
   batch_id        TEXT,
-  result          TEXT CHECK(result IN ('yes','no')),
+  result          TEXT,
   standard_version TEXT,
   decided_at      TEXT
 );

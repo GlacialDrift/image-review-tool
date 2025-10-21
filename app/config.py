@@ -2,6 +2,8 @@
 import configparser, os, sys
 from pathlib import Path
 
+def _split_list(s: str):
+    return [k.strip() for k in s.split(",") if k.strip()]
 
 def _bundle_root() -> Path:
     # When frozen by PyInstaller, the executable lives in a folder we control
@@ -37,6 +39,18 @@ def load_config():
 
     expand = os.path.expandvars
 
+    # Parse dynamic result bindings
+    result_bindings = {}
+    if "results" in cfg:
+        for result_name, keys in cfg["results"].items():
+            result_bindings[result_name.strip()] = _split_list(keys)
+
+    # Back-compat fallback if [results] is not defined
+    if not result_bindings:
+        yes_keys = _split_keys(cfg, "keybinds", "yes", ["y", "b", "s"])
+        no_keys = _split_keys(cfg, "keybinds", "no", ["n", "g"])
+        result_bindings = {"yes": yes_keys, "no": no_keys}
+
     image = {}
     if "image" in cfg:
         image = {
@@ -65,4 +79,5 @@ def load_config():
         "KEYBINDS": {"yes": yes_keys, "no": no_keys},
         "RANDOM_SEED": rs,
         "IMAGE": image,
+        "RESULT_BINDINGS": result_bindings,
     }

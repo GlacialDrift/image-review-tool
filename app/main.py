@@ -5,7 +5,7 @@ from PIL import ImageTk
 from pathlib import Path
 
 from app.config import load_config
-from app.db import connect, ensure_schema, assign_batch, record_decision
+from app.db import connect, ensure_schema, assign_batch, record_decision, run_migrations
 from app.io_image import load_image, prepare_for_display
 
 
@@ -16,22 +16,17 @@ class App(tk.Tk):
         self.state("zoomed")
 
         self.cfg = load_config()
-        yes_keys = self.cfg["KEYBINDS"]["yes"]
-        no_keys = self.cfg["KEYBINDS"]["no"]
+        bindings = self.cfg["RESULT_BINDINGS"]
 
-        # Bind "yes" keys (both cases)
-        for k in yes_keys:
-            self.bind(f"<{k}>", lambda e, r="yes": self.mark(r))
-            self.bind(f"<{k.upper()}>", lambda e, r="yes": self.mark(r))
-
-        # Bind "no" keys (both cases)
-        for k in no_keys:
-            self.bind(f"<{k}>", lambda e, r="no": self.mark(r))
-            self.bind(f"<{k.upper()}>", lambda e, r="no": self.mark(r))
+        # Bind all key shortcuts
+        for result, keys in bindings.items():
+            for k in keys:
+                self._bind_result_key(k, result)
 
         self.bind("<Escape>", lambda e: self.destroy())
         self.after(50, self.focus_force)
 
+        # Database connection
         self.con = connect(self.cfg["DB_PATH"])
         from sys import executable
 
@@ -41,18 +36,30 @@ class App(tk.Tk):
             else Path(__file__).resolve().parents[1]
         )
         ensure_schema(self.con, str(bundle_dir / "schema.sql"))
+        run_migrations(self.con)
 
         self.user = getpass.getuser()
         self.batch_id = None
         self.items = []
         self.index = 0
 
+        def pretty(binds: dict[str, list[str]]):
+            parts = []
+            for res, keys in binds.items():
+                if keys:
+                    parts.append(f"{res}: {', '.join(keys)}")
+            return " | ".join(parts)
+
+        instruction_text = f"Press keys — {pretty(bindings)}"
+
         self.label = tk.Label(
             self,
-            text="If loss of coating is observed, press 'y', 'b', or 's' (for \"yes, observed\", \"bad\", or \"scrap\"), otherwise press 'n' or 'g' (for \"not observed\" or \"good\")",
+            text=instruction_text,
             font=("Segoe UI", 12),
         )
         self.label.pack()
+
+        # image holder and status bar
         self.img_label = tk.Label(self)
         self.img_label.pack(expand=True)
 
@@ -60,6 +67,18 @@ class App(tk.Tk):
         self.status.pack(fill="x")
 
         self.new_batch()
+
+    def _bind_result_key(self, key: str, result: str):
+        k = key.strip()
+        if k == " ":
+            k = "space"      # normalize literal space to Tk keysym
+        # For single-letter keys, bind lower + UPPER
+        if len(k) == 1 and k.isalpha():
+            seqs = [f"<{k}>", f"<{k.upper()}>"]
+        else:
+            seqs = [f"<{k}>"]  # multi-char keysyms (space, Return, Escape, etc.)
+        for seq in seqs:
+            self.bind(seq, lambda e, r=result: self.mark(r))
 
     def new_batch(self):
         self.batch_id, self.items = assign_batch(
