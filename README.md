@@ -1,6 +1,6 @@
 ---
 Author: Mike Harris  
-Version: 0.3.0  
+Version: 0.3.1  
 GitHub: https://github.com/GlacialDrift/image-review-tool  
 ---
 
@@ -14,7 +14,6 @@ Originally designed for manufacturing defect review, it’s general-purpose: any
 classification task can use it. Reviewers can decide their own acceptance criteria (e.g., pass/fail, yes/no, or 
 custom labels) by modifying the included `config.ini` file.
 
----
 
 ## Features
 
@@ -25,7 +24,6 @@ custom labels) by modifying the included `config.ini` file.
 - Simple setup: one executable, one database file, one image root
 - Extensible for any image labeling or inspection workflow
 
----
 
 ## Installation & Setup
 
@@ -55,7 +53,6 @@ Download the latest release (`ImageReview.zip`) from the [GitHub Releases page](
 SQLite performs best over SMB shares with **WAL mode**, which this app enables automatically. If you do not know about 
 SMB or WAL mode, simply put everything on a shared network drive
 
----
 
 ## Running the App
 
@@ -76,7 +73,6 @@ When launched:
 
 These bindings and behaviors are fully configurable in `config.ini`.
 
----
 
 ## Workflow
 
@@ -86,7 +82,6 @@ These bindings and behaviors are fully configurable in `config.ini`.
 4. Press **Esc** or close the window to cancel early — unfinished images are released back to the pool.
 5. All activity is logged immediately to the shared SQLite database.
 
----
 
 ## Database Management
 

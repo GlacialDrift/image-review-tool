@@ -11,7 +11,7 @@ env/
 # Build and distribution
 build/
 dist/
-ImageReview/
+ImageReview*/
 *.egg-info/
 
 # PyInstaller
