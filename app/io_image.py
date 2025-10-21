@@ -12,8 +12,6 @@ def _crop_for_display(img: Image.Image, cfg_image: dict | None) -> Image.Image:
         return img
     cw = cfg_image.get("crop_width")
     ch = cfg_image.get("crop_height")
-    print(cw)
-    print(ch)
     if not cw or not ch:
         return img
 
@@ -45,7 +43,6 @@ def _crop_for_display(img: Image.Image, cfg_image: dict | None) -> Image.Image:
 def resize_for_screen(img: Image.Image, max_side=1280) -> Image.Image:
     w, h = img.size
     scale = max_side / max(w,h)
-    print(scale)
     return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
 def prepare_for_display(img: Image.Image, cfg_image: dict | None) -> Image.Image:

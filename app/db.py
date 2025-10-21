@@ -49,6 +49,21 @@ def run_migrations(con):
             # Already in new shape; just bump the version without extra COMMITs
             _set_user_version(con, 2)
 
+def release_batch(con, user: str, batch_id: str):
+    """
+    Revert any in-progress (undecided) reviews in this batch back to 'unassigned'.
+    Clears assignment and batch_id so they can be picked up again.
+    """
+    with con:
+        con.execute(
+            """
+            UPDATE reviews
+            SET status='unassigned', assigned_to=NULL, batch_id=NULL
+            WHERE batch_id=? AND assigned_to=? AND status='in_progress';
+            """,
+            (batch_id, user),
+        )
+
 def connect(db_path: str):
     # Ensure the parent directory exists (SQLite won't create folders)
     parent = os.path.dirname(db_path)

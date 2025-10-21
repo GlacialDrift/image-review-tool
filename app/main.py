@@ -23,7 +23,8 @@ class App(tk.Tk):
             for k in keys:
                 self._bind_result_key(k, result)
 
-        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Escape>", lambda e: self._abort_and_close())
+        self.protocol("WM_DELETE_WINDOW", self._abort_and_close)  # handle window close
         self.after(50, self.focus_force)
 
         # Database connection
@@ -48,6 +49,7 @@ class App(tk.Tk):
             for res, keys in binds.items():
                 if keys:
                     parts.append(f"{res}: {', '.join(keys)}")
+            parts.append("Esc: Release & Exit")
             return " | ".join(parts)
 
         instruction_text = f"Press keys — {pretty(bindings)}"
@@ -67,6 +69,15 @@ class App(tk.Tk):
         self.status.pack(fill="x")
 
         self.new_batch()
+
+    def _abort_and_close(self):
+        if self.batch_id:
+            try:
+                from app.db import release_batch
+                release_batch(self.con, self.user, self.batch_id)
+            except Exception as e:
+                messagebox.showwarning("Release Warning", f"Could not find release batch: {e}")
+        self.destroy()
 
     def _bind_result_key(self, key: str, result: str):
         k = key.strip()
