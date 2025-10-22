@@ -1,6 +1,6 @@
 ---
 Author: Mike Harris  
-Version: 0.3.1  
+Version: 1.0.0
 GitHub: https://github.com/GlacialDrift/image-review-tool  
 ---
 
@@ -76,8 +76,8 @@ These bindings and behaviors are fully configurable in `config.ini`.
 
 ## Workflow
 
-1. Each reviewer receives a random batch (default: 20 images) from the pool of unreviewed images.
-2. By default, ~10% of all images are duplicated for QC — two reviewers see the same image independently.
+1. Each reviewer receives a random batch (default: 20 images, configurable in `config.ini`) from the pool of unreviewed images.
+2. By default, ~10% of all images are duplicated for QC (configurable in `config.ini`) — two reviewers see the same image independently.
 3. After each batch, the app prompts to continue or exit.
 4. Press **Esc** or close the window to cancel early — unfinished images are released back to the pool.
 5. All activity is logged immediately to the shared SQLite database.

@@ -33,7 +33,7 @@ from PIL import ImageTk
 from pathlib import Path
 
 from app.config import load_config
-from app.db import connect, ensure_schema, assign_batch, record_decision
+from app.db import connect, ensure_schema, assign_batch, record_decision, auto_skip_pair, assign_pair_now
 from app.db import run_migrations, add_annotation
 from app.io_image import load_image, prepare_for_display
 
@@ -292,8 +292,49 @@ class App(tk.Tk):
     # Decision recording
     # ----------------------------------------------------------------------
     def mark(self, result: str):
-        """Record a decision for the current image and move to the next."""
-        review_id, image_id, _, _, _ = self.items[self.index]
+        """Record a decision for the current image and advance the session.
+
+        Persists the reviewer’s decision for the currently displayed image, then
+        handles paired `_000`/`_001` logic:
+
+          * If the current image is a `_000` variant and **result is `yes` or `no`**,
+            the paired `_001` review (if present and not yet done) is automatically
+            finalized as `result='skip'` and stamped with the same `assigned_to`,
+            `batch_id`, `standard_version`, and `decided_at`.
+
+          * If the current image is a `_000` variant and **result == 'skip'**,
+            the paired `_001` review (if present and not yet done) is immediately
+            assigned to the same `user`/`batch_id` and inserted right after the
+            current item so it opens next in the UI.
+
+        Finally, the method advances the internal cursor to the next item and
+        refreshes the display. If the batch is exhausted, the normal end-of-batch
+        flow in `refresh()` applies.
+
+        Args:
+            result: The decision label to record (e.g., 'yes', 'no', 'skip', or any
+                custom label configured via RESULT_BINDINGS). This value is written
+                verbatim to the `reviews.result` column.
+
+        Side Effects:
+            - Writes to the `reviews` table via `record_decision(...)`.
+            - May update an associated `_001` review via `auto_skip_pair(...)` or
+              `assign_pair_now(...)`.
+            - Mutates `self.items` (inserting the `_001` tuple after the current
+              index on `_000`→'skip'), updates `self.index`, and triggers a UI
+              redraw with `self.refresh()`.
+
+        Error Handling:
+            - Exceptions from the paired-review helpers are caught; a non-fatal UI
+              warning is shown so the session can continue.
+            - Exceptions from the primary `record_decision(...)` call are not caught
+              here and will propagate (by design, to avoid silently losing a
+              reviewer’s decision).
+
+        Returns:
+            None
+        """
+        review_id, image_id, path, _, _ = self.items[self.index]
         record_decision(
             self.con,
             review_id,
@@ -302,6 +343,26 @@ class App(tk.Tk):
             result,
             self.cfg["STANDARD_VERSION"],
         )
+
+        p = path.lower()
+        is_zero = p.endswith("_000.jpg") or p.endswith("_000.jpeg")
+
+        if is_zero:
+            if result in ("yes", "no"):
+                try:
+                    auto_skip_pair(self.con, path, self.cfg["STANDARD_VERSION"], self.user, self.batch_id)
+                except Exception as e:
+                    messagebox.showwarning("Pair skip", f"Could not auto-skip pair: {e}")
+            elif result == "skip":
+                try:
+                    item = assign_pair_now(self.con, path, self.user, self.batch_id)
+                    if item:
+                        # show _001 immediately after this one
+                        self.items.insert(self.index + 1, item)
+                except Exception as e:
+                    messagebox.showwarning("Pair fetch", f"Could not fetch pair for review: {e}")
+
+
         self.index += 1
         self.refresh()
 

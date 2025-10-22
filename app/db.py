@@ -191,6 +191,7 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
               JOIN images i ON i.image_id = r.image_id
               WHERE r.status='unassigned'
                 AND i.qc_flag=1
+                AND i.variant = '000'
                 -- don't give both QC rows of the same image to the same user
                 AND NOT EXISTS (
                   SELECT 1 FROM reviews r2
@@ -217,6 +218,7 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
               FROM reviews r
               JOIN images i ON i.image_id = r.image_id
               WHERE r.status='unassigned'
+                AND i.variant = '000'
                 AND (
                       i.qc_flag=0
                    OR ? > 0  -- allow topping up with QC if we couldn't get enough
@@ -323,3 +325,158 @@ def add_annotation(con, review_id: int, x_norm: float, y_norm: float, button: st
             """,
             (review_id, float(x_norm), float(y_norm), button),
         )
+
+def _is_zero_variant(path: str) -> bool:
+    """Check whether a file path corresponds to a `_000` image variant.
+
+    Args:
+        path: Full filesystem path or filename of the image.
+
+    Returns:
+        bool: True if the path ends with `_000.jpg` or `_000.jpeg` (case-insensitive);
+        otherwise False.
+
+    Notes:
+        `_000` images represent the primary variant of each device pair and are
+        the only ones assigned for initial review batches.
+    """
+    p = path.lower()
+    return p.endswith("_000.jpg") or p.endswith("_000.jpeg")
+
+def _pair_path_for_zero(path: str) -> str | None:
+    """Derive the `_001` counterpart path for a given `_000` image.
+
+    Args:
+        path: Path or filename of the `_000` image.
+
+    Returns:
+        str | None: The corresponding `_001` path (same directory and extension)
+        if the input path ends with `_000.jpg` or `_000.jpeg`; otherwise None.
+
+    Example:
+        >>> _pair_path_for_zero("images/12345678901_000.jpg")
+        'images/12345678901_001.jpg'
+    """
+    # Returns the _001 image path by changing the suffix without changing the file extension
+    p = path.lower()
+    if p.endswith("_000.jpg"):
+        return path[:-8] + "_001.jpg"
+    elif p.endswith("_000.jpeg"):
+        return path[:-9] + "_001.jpeg"
+    return None
+
+def _fetch_pair_review(con, path_zero: str):
+    """Retrieve the active (not 'done') review row for the paired `_001` image.
+
+    Args:
+        con: Active SQLite connection.
+        path_zero: Full path to the `_000` image used to infer the `_001` pair.
+
+    Returns:
+        tuple | None:
+            The first matching row tuple `(review_id, image_id, path, device_id, qc_flag)`
+            for the paired `_001` image if a not-yet-completed review exists,
+            otherwise None.
+
+    Notes:
+        - This function joins the `images` and `reviews` tables to find the pair.
+        - It orders by `rowid ASC` to ensure deterministic selection if multiple
+          rows exist (e.g., QC duplicates).
+    """
+    pair_path = _pair_path_for_zero(path_zero)
+    if not pair_path:
+        return None
+    row = con.execute(
+        """
+        SELECT r.review_id, i.image_id, i.path, i.device_id, i.qc_flag
+        FROM images i
+        JOIN reviews r USING(image_id)
+        WHERE i.path=? AND r.status!='done'
+        ORDER BY r.rowid ASC
+        LIMIT 1
+        """,
+        (pair_path,),
+    ).fetchone()
+    return row
+
+def auto_skip_pair(con, path_zero: str, standard_version: str, user: str, batch_id: str):
+    """Mark the `_001` paired image as 'skip' when its `_000` counterpart is finalized.
+
+    Args:
+        con: Active SQLite connection.
+        path_zero: Path to the `_000` image whose pair should be skipped.
+        standard_version: Current standard version string (e.g., app revision or SOP version).
+        user: Username of the reviewer marking the `_000` decision.
+        batch_id: UUID of the current review batch.
+
+    Behavior:
+        If an unfinished `_001` review exists for the same device, this function:
+          * Updates its `status` to `'done'`
+          * Sets `result='skip'`
+          * Stamps `decided_at=datetime('now')`
+          * Records `standard_version`, `assigned_to`, and `batch_id`
+
+    Returns:
+        None
+    """
+    pair = _fetch_pair_review(con, path_zero)
+    if not pair:
+        return
+    pair_review_id = pair[0]
+    with con:
+        con.execute(
+            """
+            UPDATE reviews
+            SET status='done', 
+                result='skip', 
+                decided_at=datetime('now'), 
+                standard_version=?,
+                assigned_to=?,
+                batch_id=?
+            WHERE review_id=? AND status!='done';
+            """,
+            (standard_version, user, batch_id, pair_review_id),
+        )
+
+def assign_pair_now(con, path_zero: str, user: str, batch_id: str):
+    """Assign the `_001` paired image for immediate review and return its metadata tuple.
+
+    Args:
+        con: Active SQLite connection.
+        path_zero: Path to the `_000` image whose `_001` pair should be queued.
+        user: Username of the current reviewer.
+        batch_id: UUID identifying the active review batch.
+
+    Returns:
+        tuple | None:
+            The review tuple `(review_id, image_id, path, device_id, qc_flag)`
+            for the `_001` image if found and reassigned; otherwise None.
+
+    Notes:
+        - Used when the reviewer marks `_000` as 'skip', prompting the `_001` to
+          appear next in the session.
+        - The pair review row’s `status` is updated to `'in_progress'` and stamped
+          with the same `assigned_to` and `batch_id`.
+    """
+    pair = _fetch_pair_review(con, path_zero)
+    if not pair:
+        return None
+    pair_review_id = pair[0]
+    with con:
+        con.execute(
+            """
+            UPDATE reviews
+            SET status='in_progress', assigned_to=?, batch_id=?
+            WHERE review_id=? AND status!='done';
+            """,
+            (user, batch_id, pair_review_id),
+        )
+    # return the same tuple shape App expects: (review_id, image_id, path, device_id, qc_flag)
+    return con.execute(
+        """
+        SELECT r.review_id, i.image_id, i.path, i.device_id, i.qc_flag
+        FROM reviews r JOIN images i USING(image_id)
+        WHERE r.review_id=?;
+        """,
+        (pair_review_id,),
+    ).fetchone()

@@ -14,8 +14,9 @@ Behavior:
   * Reads paths and parameters from `config.ini` via `app.config.load_config()`.
   * Ensures the schema exists and applies any migrations.
   * Walks all subfolders under `IMAGE_ROOT`.
-  * Accepts only *.jpg / *.jpeg files whose names match `(\d{11})_000.jpg`.
+  * Accepts only *.jpg / *.jpeg files whose names match `(\\d{11})_(000|001).jpg`.
   * Inserts each unique image into `images` with a SHA-256 digest.
+  * Logs the device_id suffix (e.g. '000' or '001') as the variant
   * Flags ~QC_RATE of images as QC duplicates and seeds two review rows.
   * Seeds exactly one review row for non-QC images.
   * Re-running is idempotent: existing images/reviews are not duplicated.
@@ -34,7 +35,7 @@ import re
 
 IMG_EXT = {".jpg", ".jpeg"}
 
-pattern = re.compile(r"^(\d{11})_000\.jpe?g$", re.IGNORECASE)
+pattern = re.compile(r"^(\d{11})_(000|001)\.jpe?g$", re.IGNORECASE)
 
 
 def sha256_file(path: str, block=1024 * 1024) -> str:
@@ -70,7 +71,7 @@ def main():
       2) Connect to SQLite, ensure schema, and run migrations.
       3) Recursively walk the image root and filter acceptable files.
       4) For each matching file:
-         - Insert into `images` if not present (path, device_id, sha256, timestamp).
+         - Insert into `images` if not present (path, device_id, variant, sha256, timestamp).
          - Randomly flag as QC with probability QC_RATE.
          - Seed one `reviews` row (status='unassigned').
          - If QC, seed a second independent `reviews` row (still 'unassigned'),
@@ -114,44 +115,45 @@ def main():
                 continue
 
             device_id = m.group(1)
+            variant = m.group(2) # "000" or "001"
             full = os.path.join(dirpath, name)
 
             try:
                 digest = sha256_file(full)
                 with con:
-                    # existing insert
+                    # register image
                     con.execute(
                         """
-                        INSERT OR IGNORE INTO images(path, device_id, sha256, registered_at)
-                        VALUES (?,?,?, datetime('now'));
-                    """,
-                        (full, device_id, digest),
+                        INSERT OR IGNORE INTO images(path, device_id, variant, sha256, registered_at)
+                        VALUES (?,?,?,?, datetime('now'));
+                        """,
+                        (full, device_id, variant, digest),
                     )
 
-                    # mark ~10% as QC
-                    qc_flag = 1 if random.random() < qc_rate else 0
-                    con.execute(
-                        "UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full)
-                    )
+                    # QC flag only for _000
+                    qc_flag = 0
+                    if variant == "000":
+                        qc_rate = cfg["QC_RATE"]
+                        qc_flag = 1 if random.random() < qc_rate else 0
+                        con.execute("UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full))
 
-                    # seed review rows
+                    # seed exactly one review row for every image (both 000 and 001)
                     con.execute(
                         """
                         INSERT OR IGNORE INTO reviews(image_id, status)
                         SELECT image_id, 'unassigned' FROM images WHERE path=?;
-                    """,
+                        """,
                         (full,),
                     )
 
+                    # if QC _000, add the second row
                     if qc_flag:
-                        # add a second independent row for QC images
                         con.execute(
                             """
                             INSERT INTO reviews(image_id, status)
                             SELECT image_id, 'unassigned' FROM images WHERE path=?
-                            -- defensively avoid creating >2 rows if re-run
                             AND (SELECT COUNT(*) FROM reviews r WHERE r.image_id = images.image_id) < 2;
-                        """,
+                            """,
                             (full,),
                         )
 
