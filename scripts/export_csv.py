@@ -50,7 +50,7 @@ def main():
     cfg = load_config()
     con = connect(cfg["DB_PATH"])
     rows = con.execute("""
-      SELECT i.device_id, r.review_id, r.image_id, i.path, r.assigned_to, r.batch_id, r.decided_at, r.result, r.standard_version, i.qc_flag
+      SELECT i.device_id, i.variant, r.review_id, r.image_id, i.path, r.assigned_to, r.batch_id, r.decided_at, r.result, r.standard_version, i.qc_flag
       FROM reviews r JOIN images i USING(image_id)
       WHERE r.status='done'
       ORDER BY r.decided_at
@@ -58,7 +58,7 @@ def main():
     with open("decisions.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(
-            ["device_id", "review id", "image id", "path", "user", "review batch", "timestamp", "Result", "ImageReview_version", "QC"]
+            ["device_id", "variant", "review id", "image id", "path", "user", "review batch", "timestamp", "Result", "ImageReview_version", "QC"]
         )
         w.writerows(rows)
     print("Wrote decisions.csv")
