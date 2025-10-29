@@ -171,6 +171,8 @@ def load_config():
     return {
         "DB_PATH": expand(cfg["paths"]["db_path"]),
         "IMAGE_ROOT": expand(cfg["paths"]["image_root"]),
+        "OUT_DIR": expand(cfg["paths"]["out_dir"]),
+        "CSV_PATH": expand(cfg["paths"]["csv_path"]),
         "CACHE_DIR": expand(cfg["paths"]["cache_dir"]),
         "STANDARD_VERSION": cfg["app"].get("standard_version", "v1.0"),
         "BATCH_SIZE": cfg["app"].getint("batch_size", 20),
