@@ -50,7 +50,7 @@ class Targets:
 
 
 def read_targets(csv_path: Path) -> Targets:
-    with open(csv_path, newline="") as f:
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         cols = {c.strip().lower() for c in reader.fieldnames or []}
         required = {"image_id", "path", "filename", "device_id"}
@@ -180,7 +180,7 @@ def main():
     db_path = Path(config["DB_PATH"])
     image_root = Path(config["IMAGE_ROOT"])
     out_root = Path(config["OUT_DIR"])
-    csv_path = Path(config["CSV_PATH"])
+    csv_path = Path(config["RESET_PATH"])
 
     if not csv_path.exists():
         raise SystemExit(f"CSV not found: {csv_path}")
