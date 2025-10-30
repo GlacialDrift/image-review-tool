@@ -26,6 +26,8 @@ Output columns:
 """
 
 import csv
+import os.path
+
 from app.config import load_config
 from app.db import connect
 
@@ -55,13 +57,15 @@ def main():
       WHERE r.status='done'
       ORDER BY r.decided_at
     """).fetchall()
-    with open("decisions.csv", "w", newline="", encoding="utf-8") as f:
+    out_path = os.path.dirname(cfg["DB_PATH"])
+    out_path += "/decisions.csv"
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(
             ["device_id", "variant", "review id", "image id", "path", "user", "review batch", "timestamp", "Result", "ImageReview_version", "QC"]
         )
         w.writerows(rows)
-    print("Wrote decisions.csv")
+    print("Wrote decisions.csv to root directory specified in config.ini")
 
 
 if __name__ == "__main__":
