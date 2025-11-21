@@ -128,12 +128,21 @@ def draw_ring(draw: ImageDraw.ImageDraw, cx: int, cy: int, radius: int, outline:
 
 
 def draw_rings_on_image(img: Image.Image, points_px: List[Tuple[int, int]], radius: int, line_width: int) -> None:
-    draw = ImageDraw.Draw(img)
+    convert_back = (img.mode != "RGBA")
+    base = img.convert("RGBA") if convert_back else img
+
+    overlay = Image.new("RGBA", base.size, (0,0,0,0))
+    draw = ImageDraw.Draw(overlay)
     # Outer ring (contrasting edge), then inner ring
     for x, y in points_px:
-        draw_ring(draw, x, y, radius + max(1, line_width // 2), outline="black", width=max(1, line_width))
-        draw_ring(draw, x, y, radius, outline="white", width=max(1, line_width))
+        draw_ring(draw, x, y, radius + 1, outline="#00000080", width=1)
+        draw_ring(draw, x, y, radius, outline="#ffff0080", width=max(1, line_width))
 
+    result = Image.alpha_composite(base, overlay)
+    if convert_back:
+        img.paste(result.convert(img.mode))
+    else:
+        img.paste(result)
 
 
 def resolve_input_path(image_path_in_db: str, image_root: Path) -> Path:
