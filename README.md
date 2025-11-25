@@ -129,6 +129,10 @@ convention. After adding images to the folder, simply re-run `python init_db.py`
 for review. This will create new database entries for each of the **new** images in the image_root folder based on
 the parameters in `config.ini` and will not affect any existing images/database entries. 
 
+New images are defined as files that have unique file contents. The SHA256 digest of each file is used as a UUID for 
+file's contents. This ensures that if the same file exists in two different sub-directories, only a single copy of
+that file is added to the database for review. 
+
 Re-running either the `export_csv.py` or `draw_rings.py` scripts will perform the same actions as before, overwriting 
 any existing output (image or csv). 
 

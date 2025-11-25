@@ -2,8 +2,8 @@
 
 This script scans the configured image root, filters filenames by a strict
 pattern, inserts image metadata into the database, and seeds the review queue.
-Approximately a configurable fraction of images are flagged as QC (duplicate
-review) and receive a second review row to enable inter-rater consistency checks.
+A configurable fraction of images are flagged for QC review (duplicate
+review by a second user) and receive a second review row to enable inter-rater consistency checks.
 
 Usage:
     python -m init_db
@@ -120,6 +120,17 @@ def main():
 
             try:
                 digest = sha256_file(full)
+
+                existing = con.execute(
+                    "SELECT path FROM images WHERE sha256=?",
+                    (digest,)
+                ).fetchone()
+
+                if existing:
+                    print(f"[skip duplicate] {full} (same content as {existing[0]})")
+                    skipped +=1
+                    continue
+
                 with con:
                     # register image
                     con.execute(

@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS images (
   path          TEXT UNIQUE NOT NULL,
   device_id     TEXT NOT NULL,
   variant       TEXT NOT NULL,
-  sha256        TEXT NOT NULL,
+  sha256        TEXT UNIQUE NOT NULL,
   registered_at TEXT NOT NULL,
   qc_flag       INTEGER NOT NULL DEFAULT 0   -- 0 = normal, 1 = QC duplicate
 );
