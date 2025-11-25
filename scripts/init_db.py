@@ -100,6 +100,7 @@ def main():
     root = cfg["IMAGE_ROOT"]
     added = 0
     skipped = 0
+    duplicate = 0
 
     print(f"Scanning all subfolders of: {root}")
     for dirpath, _, files in os.walk(root):
@@ -112,6 +113,8 @@ def main():
             if not m:
                 skipped += 1
                 # Skip all non-_000 images or wrong names
+                if(skipped % 100 == 0):
+                    print(f"Skipped {skipped} images due to wrong file name")
                 continue
 
             device_id = m.group(1)
@@ -127,8 +130,10 @@ def main():
                 ).fetchone()
 
                 if existing:
-                    print(f"[skip duplicate] {full} (same content as {existing[0]})")
-                    skipped +=1
+                    # print(f"[skip duplicate] {full} (same content as {existing[0]})")
+                    duplicate +=1
+                    if(duplicate %100 == 0):
+                        print(f"Skipped {duplicate} images as duplicates")
                     continue
 
                 with con:
@@ -169,11 +174,14 @@ def main():
                         )
 
                 added += 1
+                if(added %100 == 0):
+                    print(f"Added {added} images so far")
             except Exception as e:
                 print(f"[skip] {full}: {e}")
 
     print(f"Added {added} qualifying images.")
-    print(f"Skipped {skipped} non-_000 files.")
+    print(f"Skipped {skipped} non-_00(0/1) files.")
+    print(f"Skipped {duplicate} duplicate files")
 
 
 if __name__ == "__main__":
