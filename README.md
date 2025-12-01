@@ -1,6 +1,6 @@
 ---
 Author: Mike Harris  
-Version: 1.0.0
+Version: 2.0.0
 GitHub: https://github.com/GlacialDrift/image-review-tool  
 ---
 
@@ -78,7 +78,7 @@ SMB or WAL mode, simply put everything on a shared network drive
 | Table         | Purpose                                               |
 | ------------- | ----------------------------------------------------- |
 | `images`      | one row per unique (SHA256) image                     |
-| `reviews`     | one row per review task (QC images generate two rows) |
+| `reviews`     | one row per review task (QC images generates additional rows) |
 | `annotations` | optional click-location data                          |
 | `devices`     | one row per device summarizing the final result       |
 
