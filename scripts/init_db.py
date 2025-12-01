@@ -83,14 +83,9 @@ def main():
     Idempotency:
       Uses `INSERT OR IGNORE` and a defensive LIMIT to prevent duplication if
       re-run against the same dataset.
-
-    Raises:
-      RuntimeError: If the database cannot be opened.
-      sqlite3.Error: On unexpected SQL errors.
-      OSError: If files cannot be read for hashing.
     """
     cfg = load_config()
-    qc_rate = cfg["QC_RATE"]
+    qc_rate = cfg["QC_RATE"]          # CHANGED: read once here
     random.seed(cfg.get("RANDOM_SEED"))
 
     con = connect(cfg["DB_PATH"])
@@ -110,15 +105,16 @@ def main():
                 continue
 
             m = pattern.match(name)
+
+            # Skip all non-matching filenames
             if not m:
                 skipped += 1
-                # Skip all non-_000 images or wrong names
-                if(skipped % 100 == 0):
+                if skipped % 100 == 0:
                     print(f"Skipped {skipped} images due to wrong file name")
                 continue
 
             device_id = m.group(1)
-            variant = m.group(2) # "image number for a given device"
+            variant = m.group(2)  # "image number for a given device"
             full = os.path.join(dirpath, name)
 
             try:
@@ -126,13 +122,13 @@ def main():
 
                 existing = con.execute(
                     "SELECT path FROM images WHERE sha256=?",
-                    (digest,)
+                    (digest,),
                 ).fetchone()
 
                 if existing:
                     # print(f"[skip duplicate] {full} (same content as {existing[0]})")
-                    duplicate +=1
-                    if(duplicate %100 == 0):
+                    duplicate += 1
+                    if duplicate % 100 == 0:
                         print(f"Skipped {duplicate} images as duplicates")
                     continue
 
@@ -146,9 +142,21 @@ def main():
                         (full, device_id, variant, digest),
                     )
 
-                    qc_rate = cfg["QC_RATE"]
+                    # NEW: ensure a devices row exists for this device_id
+                    con.execute(
+                        """
+                        INSERT OR IGNORE INTO devices(device_id, final_result)
+                        VALUES (?, 'unknown');
+                        """,
+                        (device_id,),
+                    )
+
+                    # set QC flag for this image
                     qc_flag = 1 if random.random() < qc_rate else 0
-                    con.execute("UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full))
+                    con.execute(
+                        "UPDATE images SET qc_flag=? WHERE path=?",
+                        (qc_flag, full),
+                    )
 
                     # seed exactly one review row for every image
                     con.execute(
@@ -159,19 +167,24 @@ def main():
                         (full,),
                     )
 
-                    # if QC, add the second row
+                    # if QC, add the second row (but only if there are < 2 total)
                     if qc_flag:
                         con.execute(
                             """
                             INSERT INTO reviews(image_id, status)
-                            SELECT image_id, 'unassigned' FROM images WHERE path=?
-                            AND (SELECT COUNT(*) FROM reviews r WHERE r.image_id = images.image_id) < 2;
+                            SELECT image_id, 'unassigned' FROM images
+                            WHERE path=?
+                              AND (
+                                    SELECT COUNT(*)
+                                    FROM reviews r
+                                    WHERE r.image_id = images.image_id
+                                  ) < 2;
                             """,
                             (full,),
                         )
 
                 added += 1
-                if(added %100 == 0):
+                if added % 100 == 0:
                     print(f"Added {added} images so far")
             except Exception as e:
                 print(f"[skip] {full}: {e}")
