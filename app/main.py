@@ -34,7 +34,7 @@ from pathlib import Path
 
 from app.config import load_config
 from app.db import connect, ensure_schema, assign_batch, record_decision
-from app.db import run_migrations, add_annotation
+from app.db import _set_user_version, add_annotation
 from app.io_image import load_image, prepare_for_display
 
 
@@ -80,7 +80,7 @@ class App(tk.Tk):
             else Path(__file__).resolve().parents[1]
         )
         ensure_schema(self.con, str(bundle_dir / "schema.sql"))
-        run_migrations(self.con)
+        _set_user_version(self.con, 2)
 
         self.user = getpass.getuser()
         self.batch_id = None

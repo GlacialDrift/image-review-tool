@@ -21,7 +21,7 @@ All mutations are wrapped in short explicit transactions to avoid race
 conditions during multi-user access.
 """
 
-import sqlite3, uuid, os, random
+import sqlite3, uuid, os
 
 # ---------------------------------------------------------------------------
 # Schema migration helpers
@@ -34,74 +34,6 @@ def _get_user_version(con):
 def _set_user_version(con, v: int):
     """Set the schema version number in SQLite PRAGMA."""
     con.execute(f"PRAGMA user_version={v};")
-
-def run_migrations(con):
-    """Apply incremental migrations to the database schema.
-
-    Uses SQLite's `PRAGMA user_version` to track applied migrations.
-    Each migration block should be idempotent and bump the version once
-    successfully applied.
-
-    Current migrations:
-      v<2 → v=2
-        - Remove the CHECK constraint restricting `reviews.result`
-          to ('yes','no') to allow arbitrary result labels.
-        - Create the `annotations` table if missing.
-
-    Args:
-        con: Active SQLite connection (autocommit enabled).
-    """
-    v = _get_user_version(con)
-
-    # --- Migration to v=2: remove CHECK on reviews.result ---
-    if v < 2:
-        row = con.execute("""
-            SELECT sql FROM sqlite_master
-            WHERE type='table' AND name='reviews'
-        """).fetchone()
-        sql = row[0] if row else ""
-
-        # Old schema had: result TEXT CHECK(result IN ('yes','no'))
-        if "result" in sql and "CHECK" in sql and "'yes'" in sql and "'no'" in sql:
-            # Do ALL transactional work inside one executescript block
-            con.executescript("""
-                BEGIN IMMEDIATE;
-
-                CREATE TABLE reviews_new (
-                  review_id        INTEGER PRIMARY KEY,
-                  image_id         INTEGER NOT NULL REFERENCES images(image_id),
-                  status           TEXT NOT NULL CHECK(status IN ('unassigned','in_progress','done')),
-                  assigned_to      TEXT,
-                  batch_id         TEXT,
-                  result           TEXT,
-                  standard_version TEXT,
-                  decided_at       TEXT
-                );
-
-                INSERT INTO reviews_new
-                  (review_id,image_id,status,assigned_to,batch_id,result,standard_version,decided_at)
-                SELECT review_id,image_id,status,assigned_to,batch_id,result,standard_version,decided_at
-                FROM reviews;
-
-                DROP TABLE reviews;
-                ALTER TABLE reviews_new RENAME TO reviews;
-
-                PRAGMA user_version=2;
-                
-                CREATE TABLE IF NOT EXISTS annotations (
-                    ann_id     INTEGER PRIMARY KEY,
-                    review_id  INTEGER NOT NULL REFERENCES reviews(review_id),
-                    x_norm     REAL NOT NULL,  -- 0..1 in original image space
-                    y_norm     REAL NOT NULL,  -- 0..1 in original image space
-                    button     TEXT CHECK(button IN ('left','right')) NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                COMMIT;
-            """)
-        else:
-            # Already in new shape; just bump the version without extra COMMITs
-            _set_user_version(con, 2)
-
 
 
 # ---------------------------------------------------------------------------
@@ -197,14 +129,14 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
                   SELECT 1 FROM reviews r2
                   WHERE r2.image_id = r.image_id AND r2.assigned_to = ?
                 )
-              ORDER BY RANDOM()
+              ORDER BY i.variant ASC, RANDOM()
               LIMIT ?
             )
             UPDATE reviews
             SET status='in_progress', assigned_to=?, batch_id=?
             WHERE review_id IN (SELECT review_id FROM pool)
             RETURNING review_id;
-        """,
+            """,
             (user, target_qc, user, batch_id),
         ).fetchall()
 
@@ -227,14 +159,14 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
                   SELECT 1 FROM reviews r2
                   WHERE r2.image_id = r.image_id AND r2.assigned_to = ?
                 )
-              ORDER BY RANDOM()
+              ORDER BY i.variant ASC, RANDOM()
               LIMIT ?
             )
             UPDATE reviews
             SET status='in_progress', assigned_to=?, batch_id=?
             WHERE review_id IN (SELECT review_id FROM pool)
             RETURNING review_id;
-        """,
+            """,
             (
                 target_qc - got_qc,
                 user,
@@ -255,8 +187,8 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
       SELECT r.review_id, i.image_id, i.path, i.device_id, i.qc_flag
       FROM reviews r JOIN images i ON i.image_id = r.image_id
       WHERE r.review_id IN ({",".join("?" * len(picked_ids))})
-      ORDER BY RANDOM()
-    """
+      ORDER BY i.variant, RANDOM()
+        """
     items = con.execute(q, picked_ids).fetchall()
     # return [(review_id, image_id, path, device_id, qc_flag), ...]
     return batch_id, items
@@ -301,7 +233,7 @@ def record_decision(
             UPDATE reviews
             SET status='done', result=?, decided_at=datetime('now'), standard_version=?
             WHERE review_id=? AND assigned_to=? AND batch_id=?;
-        """,
+            """,
             (result, standard_version, review_id, user, batch_id),
         )
 
@@ -326,6 +258,135 @@ def add_annotation(con, review_id: int, x_norm: float, y_norm: float, button: st
             (review_id, float(x_norm), float(y_norm), button),
         )
 
+def get_device_review_results(con, device_id: str):
+    """Return completed review results for a device, ordered by variant.
+
+    Returns a list of (variant, result) for all reviews on this device where
+    status='done' and result is not NULL, ordered by images.variant ASC.
+
+    This is used by the NO–SKIP–SKIP pattern logic.
+    """
+    rows = con.execute(
+        """
+        SELECT i.variant, r.result
+        FROM reviews r
+        JOIN images i ON i.image_id = r.image_id
+        WHERE i.device_id = ?
+          AND r.status = 'done'
+          AND r.result IS NOT NULL
+        ORDER BY i.variant ASC, r.review_id ASC;
+        """,
+        (device_id,),
+    ).fetchall()
+    return rows  # e.g. [('000', 'no'), ('001', 'skip'), ('002', 'skip')]
+
+def auto_skip_remaining_for_device(
+    con,
+    device_id: str,
+    user: str,
+    batch_id: str | None,
+    standard_version: str,
+    result_code: str,
+):
+    """Mark all remaining reviews for a device as done with an auto-skip result.
+
+    This is used for:
+      * YES rule:     result_code = 'auto_skip_device_yes'
+      * NO–SKIP–SKIP: result_code = 'repeated_skip_pattern'
+    """
+    with con:
+        con.execute(
+            """
+            UPDATE reviews
+            SET status = 'done',
+                result = ?,
+                decided_at = datetime('now'),
+                standard_version = COALESCE(standard_version, ?),
+                assigned_to = COALESCE(assigned_to, ?),
+                batch_id = COALESCE(batch_id, ?)
+            WHERE image_id IN (
+                SELECT image_id FROM images WHERE device_id = ?
+            )
+              AND status != 'done';
+            """,
+            (result_code, standard_version, user, batch_id, device_id),
+        )
+
+def update_device_final_result(
+    con,
+    device_id: str,
+    final_result: str,
+    decision_source: str,
+    notes: str | None = None,
+):
+    """Update the device-level final result.
+
+    final_result: 'yes', 'no', or 'unknown'
+    decision_source: image_id or rule name (e.g. 'no_skip_skip_rule')
+    """
+    with con:
+        con.execute(
+            """
+            UPDATE devices
+            SET final_result = ?,
+                final_decision_source = ?,
+                decided_at = datetime('now'),
+                notes = COALESCE(notes, ?)
+            WHERE device_id = ?;
+            """,
+            (final_result, decision_source, notes, device_id),
+        )
+
+def finalize_device_yes(
+    con,
+    device_id: str,
+    image_id: int,
+    user: str,
+    batch_id: str | None,
+    standard_version: str,
+):
+    """Apply YES rule: mark device yes and auto-skip remaining images."""
+    auto_skip_remaining_for_device(
+        con,
+        device_id=device_id,
+        user=user,
+        batch_id=batch_id,
+        standard_version=standard_version,
+        result_code="auto_skip_device_yes",
+    )
+    update_device_final_result(
+        con,
+        device_id=device_id,
+        final_result="yes",
+        decision_source=str(image_id),
+        notes="triggered_by: yes_decision",
+    )
+
+def finalize_device_no_by_pattern(
+    con,
+    device_id: str,
+    user: str,
+    batch_id: str | None,
+    standard_version: str,
+):
+    """Apply NO–SKIP–SKIP rule: mark device no and auto-skip remaining images."""
+    auto_skip_remaining_for_device(
+        con,
+        device_id=device_id,
+        user=user,
+        batch_id=batch_id,
+        standard_version=standard_version,
+        result_code="repeated_skip_pattern",
+    )
+    update_device_final_result(
+        con,
+        device_id=device_id,
+        final_result="no",
+        decision_source="repeated_skip_rule",
+        notes="triggered_by: repeated_skip_pattern",
+    )
+
+
 def _is_zero_variant(path: str) -> bool:
     """Check whether a file path corresponds to a `_000` image variant.
 
@@ -342,6 +403,16 @@ def _is_zero_variant(path: str) -> bool:
     """
     p = path.lower()
     return p.endswith("_000.jpg") or p.endswith("_000.jpeg")
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Old pair assignment logic for reviewing only _000.jpg and _001.jpg images
+# ---------------------------------------------------------------------------
+
+
 
 def _pair_path_for_zero(path: str) -> str | None:
     """Derive the `_001` counterpart path for a given `_000` image.

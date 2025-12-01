@@ -30,7 +30,7 @@ Design notes:
 import hashlib, os, sqlite3, random
 from pathlib import Path
 from app.config import load_config
-from app.db import connect, ensure_schema, run_migrations
+from app.db import connect, ensure_schema, _set_user_version
 import re
 
 IMG_EXT = {".jpg", ".jpeg"}
@@ -90,7 +90,7 @@ def main():
 
     con = connect(cfg["DB_PATH"])
     ensure_schema(con, str(Path(__file__).resolve().parents[1] / "schema.sql"))
-    run_migrations(con)
+    _set_user_version(con, 2)
 
     root = cfg["IMAGE_ROOT"]
     added = 0
