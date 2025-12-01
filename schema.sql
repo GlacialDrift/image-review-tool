@@ -53,8 +53,8 @@ CREATE TABLE IF NOT EXISTS images (
 );
 
 -- Helpful indexes for device/variant-based queries
-CREATE INDEX idx_images_device ON images(device_id);
-CREATE INDEX idx_images_device_variant ON images(device_id, variant);
+CREATE INDEX IF NOT EXISTS idx_images_device ON images(device_id);
+CREATE INDEX IF NOT EXISTS idx_images_device_variant ON images(device_id, variant);
 
 -- ---------------------------------------------------------------------------
 -- Table: reviews
@@ -79,8 +79,8 @@ CREATE TABLE IF NOT EXISTS reviews (
   FOREIGN KEY (image_id) REFERENCES images(image_id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_reviews_image ON reviews(image_id);
-CREATE INDEX idx_reviews_status ON reviews(status);
+CREATE INDEX IF NOT EXISTS idx_reviews_image ON reviews(image_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
 
 -- ------------------------------------------------------------
 -- Table: devices
@@ -90,13 +90,13 @@ CREATE INDEX idx_reviews_status ON reviews(status);
 CREATE TABLE IF NOT EXISTS devices (
     device_id            TEXT PRIMARY KEY,  -- same as images.device_id
     final_result         TEXT,              -- 'yes', 'no', 'unknown'
-    final_decision_source TEXT,             -- image_id or rule name, e.g. 'no_skip_skip_rule'
+    final_decision_source_image_id TEXT,             -- image_id or rule name, e.g. 'no_skip_skip_rule'
     decided_at           TEXT,              -- datetime when device-level result was set
     notes                TEXT               -- optional notes
 );
 
 -- Optional index if you ever want to filter by result quickly
-CREATE INDEX idx_devices_final_result ON devices(final_result);
+CREATE INDEX IF NOT EXISTS idx_devices_final_result ON devices(final_result);
 
 -- ---------------------------------------------------------------------------
 -- Table: annotations

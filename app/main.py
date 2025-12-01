@@ -33,8 +33,18 @@ from PIL import ImageTk
 from pathlib import Path
 
 from app.config import load_config
-from app.db import connect, ensure_schema, assign_batch, record_decision
-from app.db import _set_user_version, add_annotation
+from app.db import (
+    connect,
+    ensure_schema,
+    assign_batch,
+    record_decision,
+    _set_user_version,
+    add_annotation,
+    get_device_review_results,
+    finalize_device_yes,
+    finalize_device_no_by_pattern,
+    finalize_exhausted_devices
+)
 from app.io_image import load_image, prepare_for_display
 
 
@@ -284,6 +294,10 @@ class App(tk.Tk):
         self.index = 0
         if not self.items:
             messagebox.showinfo("Done", "No unassigned images remain.")
+            try:
+                finalize_exhausted_devices(self.con)
+            except Exception as e:
+                messagebox.showwarning("Cleanup", f"Device cleanup failed: {e}")
             self.destroy()
             return
         self.refresh()
@@ -294,18 +308,17 @@ class App(tk.Tk):
     def mark(self, result: str):
         """Record a decision for the current image and advance the session.
 
-        Persists the reviewer’s decision for the currently displayed image, <s>then
-        handles paired `_000`/`_001` logic:
+        Persists the reviewer’s decision for the currently displayed image,
+        then applies device-level rules:
 
-          * If the current image is a `_000` variant and **result is `yes` or `no`**,
-            the paired `_001` review (if present and not yet done) is automatically
-            finalized as `result='skip'` and stamped with the same `assigned_to`,
-            `batch_id`, `standard_version`, and `decided_at`.
+          * YES rule:
+              If the current decision is 'yes', the device is marked YES and all
+              remaining reviews for that device are auto-skipped.
 
-          * If the current image is a `_000` variant and **result == 'skip'**,
-            the paired `_001` review (if present and not yet done) is immediately
-            assigned to the same `user`/`batch_id` and inserted right after the
-            current item so it opens next in the UI.</s>
+          * NO–SKIP–SKIP rule:
+              If, after this decision, the last three completed results for this
+              device are ['no', 'skip', 'skip'] (in variant order), the device is
+              marked NO and all remaining reviews for that device are auto-skipped.
 
         Finally, the method advances the internal cursor to the next item and
         refreshes the display. If the batch is exhausted, the normal end-of-batch
@@ -318,23 +331,19 @@ class App(tk.Tk):
 
         Side Effects:
             - Writes to the `reviews` table via `record_decision(...)`.
-            - May update an associated `_001` review via `auto_skip_pair(...)` or
-              `assign_pair_now(...)`.
-            - Mutates `self.items` (inserting the `_001` tuple after the current
-              index on `_000`→'skip'), updates `self.index`, and triggers a UI
-              redraw with `self.refresh()`.
-
-        Error Handling:
-            - Exceptions from the paired-review helpers are caught; a non-fatal UI
-              warning is shown so the session can continue.
-            - Exceptions from the primary `record_decision(...)` call are not caught
-              here and will propagate (by design, to avoid silently losing a
-              reviewer’s decision).
+            - May trigger device-level auto-skip via YES rule or NO–SKIP–SKIP rule.
+            - Mutates `self.index` and triggers a UI redraw with `self.refresh()`.
 
         Returns:
             None
         """
-        review_id, image_id, path, _, _ = self.items[self.index]
+        if not self.items:
+            return
+
+        # Current item layout: (review_id, image_id, path, device_id, qc_flag)
+        review_id, image_id, path, device_id, _ = self.items[self.index]
+
+        # 1) Record the decision for this specific review row
         record_decision(
             self.con,
             review_id,
@@ -344,25 +353,38 @@ class App(tk.Tk):
             self.cfg["STANDARD_VERSION"],
         )
 
-        # p = path.lower()
-        # is_zero = p.endswith("_000.jpg") or p.endswith("_000.jpeg")
+        # 2) Device-level auto-skip rules
+        try:
+            # YES rule: highest priority
+            if result == "yes":
+                finalize_device_yes(
+                    self.con,
+                    device_id=device_id,
+                    image_id=image_id,
+                    user=self.user,
+                    batch_id=self.batch_id,
+                    standard_version=self.cfg["STANDARD_VERSION"],
+                )
 
-        # if is_zero:
-        #     if result in ("yes", "no"):
-        #         try:
-        #             auto_skip_pair(self.con, path, self.cfg["STANDARD_VERSION"], self.user, self.batch_id)
-        #         except Exception as e:
-        #             messagebox.showwarning("Pair skip", f"Could not auto-skip pair: {e}")
-        #     elif result == "skip":
-        #         try:
-        #             item = assign_pair_now(self.con, path, self.user, self.batch_id)
-        #             if item:
-        #                 # show _001 immediately after this one
-        #                 self.items.insert(self.index + 1, item)
-        #         except Exception as e:
-        #             messagebox.showwarning("Pair fetch", f"Could not fetch pair for review: {e}")
+            else:
+                # NO–SKIP–SKIP rule: check last three completed results for this device
+                history = get_device_review_results(self.con, device_id)
+                # history is list of (variant, result), e.g. [('000','no'), ('001','skip'), ('002','skip')]
+                if len(history) >= 3:
+                    last_three = [r for (_, r) in history[-3:]]
+                    if last_three == ["no", "skip", "skip"]:
+                        finalize_device_no_by_pattern(
+                            self.con,
+                            device_id=device_id,
+                            user=self.user,
+                            batch_id=self.batch_id,
+                            standard_version=self.cfg["STANDARD_VERSION"],
+                        )
+        except Exception as e:
+            # Non-fatal: the primary decision has been saved; warn but continue
+            messagebox.showwarning("Auto-skip", f"Device-level auto-skip failed: {e}")
 
-
+        # 3) Advance to the next item in the batch
         self.index += 1
         self.refresh()
 

@@ -329,7 +329,7 @@ def update_device_final_result(
             """
             UPDATE devices
             SET final_result = ?,
-                final_decision_source = ?,
+                final_decision_source_image_id = ?,
                 decided_at = datetime('now'),
                 notes = COALESCE(notes, ?)
             WHERE device_id = ?;
@@ -359,7 +359,7 @@ def finalize_device_yes(
         device_id=device_id,
         final_result="yes",
         decision_source=str(image_id),
-        notes="triggered_by: yes_decision",
+        notes="yes_decision",
     )
 
 def finalize_device_no_by_pattern(
@@ -383,8 +383,69 @@ def finalize_device_no_by_pattern(
         device_id=device_id,
         final_result="no",
         decision_source="repeated_skip_rule",
-        notes="triggered_by: repeated_skip_pattern",
+        notes="repeated_skip_pattern",
     )
+
+def finalize_exhausted_devices(con):
+    """Finalize device-level results for devices with completed reviews.
+
+    - Devices with any 'yes' result but no final_result yet -> final_result='yes'
+    - Devices with all reviews done, no 'yes', and no final_result -> final_result='no'
+      with final_decision_source='exhausted_images'.
+    """
+
+    with con:
+        # 1) Any device that has at least one 'yes' but hasn't been finalized as 'yes'
+        con.execute(
+            """
+            UPDATE devices AS d
+            SET final_result = 'yes',
+                final_decision_source_image_id = 'cleanup_yes',
+                decided_at = datetime('now'),
+                notes = COALESCE(notes, 'cleanup_yes')
+            WHERE (d.final_result IS NULL OR d.final_result = 'unknown')
+              AND EXISTS (
+                    SELECT 1
+                    FROM reviews r
+                    JOIN images i ON i.image_id = r.image_id
+                    WHERE i.device_id = d.device_id
+                      AND r.result = 'yes'
+              );
+            """
+        )
+
+        # 2) Devices fully reviewed (no pending reviews), no 'yes', still unknown
+        con.execute(
+            """
+            UPDATE devices AS d
+            SET final_result = 'no',
+                final_decision_source_image_id = 'exhausted_images',
+                decided_at = datetime('now'),
+                notes = COALESCE(notes, 'cleanup_no')
+            WHERE (d.final_result IS NULL OR d.final_result = 'unknown')
+              AND EXISTS (
+                    SELECT 1
+                    FROM images i
+                    WHERE i.device_id = d.device_id
+              )
+              AND NOT EXISTS (
+                    -- any review still not done?
+                    SELECT 1
+                    FROM reviews r
+                    JOIN images i2 ON i2.image_id = r.image_id
+                    WHERE i2.device_id = d.device_id
+                      AND r.status != 'done'
+              )
+              AND NOT EXISTS (
+                    -- any 'yes' result? (defensive double-check)
+                    SELECT 1
+                    FROM reviews r
+                    JOIN images i3 ON i3.image_id = r.image_id
+                    WHERE i3.device_id = d.device_id
+                      AND r.result = 'yes'
+              );
+            """
+        )
 
 
 def _is_zero_variant(path: str) -> bool:
