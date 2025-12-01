@@ -14,16 +14,35 @@ Originally designed for manufacturing defect review, it’s general-purpose: any
 classification task can use it. Reviewers can decide their own acceptance criteria (e.g., pass/fail, yes/no, or 
 custom labels) by modifying the included `config.ini` file.
 
+v2.0 introduces powerful device-level automation (for multiple review images per device), variant-priority review, 
+and auto-skip rules that reduce manual review time by 50-70% in real production settings.
+
 
 ## Features
 
+### Device-Aware Review (New in v2.0.0)
+- Images are grouped by an 11-digit device_id extracted from filenames. The reviewer’s decisions update both:
+  - individual image reviews 
+  - the device-level outcome
+- Images are automatically reviewed in ascending variant order (e.g., `000` → `001` → `002` →...). This ensures the most informative images for each device are seen first.
+- The tool intelligently skips images that no longer require review:
+  - **YES Rule:**
+    - If any image is marked yes, all remaining images for that device are auto-skipped. 
+    - Device is finalized as yes. 
+  - **Repeated–SKIP Rule:**
+    - If the last three decisions for a device follow: `no → skip → skip` then the remaining images are auto-skipped 
+    - Device is finalized as no. 
+  - **Exhaustion Rule:**
+    - If all images are reviewed and none were “yes,” the device is auto-finalized as no.
+- Images are uniquely identified by their content hash. Duplicate files — even in different folders — are added only once.
+
+### Core Features (from v1.0.0)
 - Multi-user support
 - Configurable results, keybinds, and mouse actions through `config.ini`
 - Optional QC duplication (assigns a subset of images for double review)
 - Optional click-based annotation (stores normalized coordinates of click location on the image)
 - Simple setup: one executable, one database file, one image root
 - Extensible for any image labeling or inspection workflow
-
 
 ## Installation & Setup
 
@@ -55,18 +74,29 @@ SMB or WAL mode, simply put everything on a shared network drive
 
 ## Database Management
 
+### Schema Overview
+| Table         | Purpose                                               |
+| ------------- | ----------------------------------------------------- |
+| `images`      | one row per unique (SHA256) image                     |
+| `reviews`     | one row per review task (QC images generate two rows) |
+| `annotations` | optional click-location data                          |
+| `devices`     | one row per device summarizing the final result       |
+
 ### Creating the Database
 Run:
 ```bash
 python init_db.py
 ```
-
 ### Functionality
 
-Running the `init_db.py` script will create a database of images. The database contains information on:
-- image information
-- whether the image has been reviewed
-- the result of any review outcome
+This will:
+- create tables if missing
+- scan `image_root` for images
+- compute `SHA256` for the *content* of each image
+- insert new images only
+- see corresponding review rows
+- ensure every device has a unique row in `devices` table
+
 The database will be generated at the location specified in the `config.ini` settings. 
 
 ## Running the App
@@ -74,7 +104,7 @@ The database will be generated at the location specified in the `config.ini` set
 Double-click `ImageReview.exe` (or run `python run_app.py` for development).
 
 When launched:
-- The first available batch of images is automatically assigned, selecting random images from the entire available set.
+- The first available batch is automatically assigned using variant-priority ordering: lower-numbered variants (e.g., 000) are reviewed first. Randomization only occurs within the same variant number.
 - Images for each batch are displayed one at a time in randomized order.
 - Decisions are recorded immediately in the database.
 
@@ -90,10 +120,20 @@ These bindings and behaviors are fully configurable in `config.ini`.
 
 ### Workflow
 
-1. Each reviewer receives a random batch (default: 20 images, configurable in `config.ini`) from the pool of unreviewed images.
+#### Batch Assignment
+1. Batches (default 20 images) are assigned using `variant`-priority ordering (the `variant` is the numerical suffix to an image file, e.g. `_000` or `_001`)
+2. All `000` images are reviewed first, then `001`, then `002`, etc.
+
+#### Device-Level Automation
+3. After each decision, the system evaluates the device-level state:
+    A. The **YES** Rule triggers if the image was marked `yes`. The entire device is marked `yes` and all remaining images for that device are marked as `skip`
+    B. The **Repeated-Skip** Rule triggers if two `skips` follow a `no` decision for a single device, indicating with high likelihood that the unit has no scrap
+
+#### General Workflow
+1. Each reviewer receives a random batch from the pool of unreviewed images (after accounting for variant priority)
 2. By default, ~10% of all images are duplicated for QC (configurable in `config.ini`) — two reviewers see the same image independently.
-3. After each batch, the app prompts to continue or exit.
-4. Press **Esc** or close the window to cancel early — unfinished images are released back to the pool.
+3. After each batch is completed, the app prompts to continue or exit.
+4. Press **Esc** or close the window to cancel early — unfinished images are released back to the pool without any finalized review.
 5. All activity is logged immediately to the shared SQLite database.
 
 ## Annotations and Database Export
@@ -136,5 +176,5 @@ that file is added to the database for review.
 Re-running either the `export_csv.py` or `draw_rings.py` scripts will perform the same actions as before, overwriting 
 any existing output (image or csv). 
 
-## Build
+## Building an Executable
 pyinstaller --onefile --noconsole --name ImageReview --paths . --add-data "schema.sql;." --add-data "config.example.ini;." run_app.py
