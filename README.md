@@ -126,15 +126,17 @@ These bindings and behaviors are fully configurable in `config.ini`.
 
 #### Device-Level Automation
 3. After each decision, the system evaluates the device-level state:
+   
     A. The **YES** Rule triggers if the image was marked `yes`. The entire device is marked `yes` and all remaining images for that device are marked as `skip`
+   
     B. The **Repeated-Skip** Rule triggers if two `skips` follow a `no` decision for a single device, indicating with high likelihood that the unit has no scrap
 
 #### General Workflow
-1. Each reviewer receives a random batch from the pool of unreviewed images (after accounting for variant priority)
-2. By default, ~10% of all images are duplicated for QC (configurable in `config.ini`) — two reviewers see the same image independently.
-3. After each batch is completed, the app prompts to continue or exit.
-4. Press **Esc** or close the window to cancel early — unfinished images are released back to the pool without any finalized review.
-5. All activity is logged immediately to the shared SQLite database.
+4. Each reviewer receives a random batch from the pool of unreviewed images (after accounting for variant priority)
+5. By default, ~10% of all images are duplicated for QC (configurable in `config.ini`) — two reviewers see the same image independently.
+6. After each batch is completed, the app prompts to continue or exit.
+7. Press **Esc** or close the window to cancel early — unfinished images are released back to the pool without any finalized review.
+8. All activity is logged immediately to the shared SQLite database.
 
 ## Annotations and Database Export
 
