@@ -35,7 +35,7 @@ import re
 
 IMG_EXT = {".jpg", ".jpeg"}
 
-pattern = re.compile(r"^(\d{11})_(000|001)\.jpe?g$", re.IGNORECASE)
+pattern = re.compile(r"^(\d{11})_(\d{3})\.jpe?g$", re.IGNORECASE)
 
 
 def sha256_file(path: str, block=1024 * 1024) -> str:
@@ -118,11 +118,11 @@ def main():
                 continue
 
             device_id = m.group(1)
-            variant = m.group(2) # "000" or "001"
+            variant = m.group(2) # "image number for a given device"
             full = os.path.join(dirpath, name)
 
             try:
-                digest = sha256_file(full)
+                digest = sha256_file(str(full))
 
                 existing = con.execute(
                     "SELECT path FROM images WHERE sha256=?",
@@ -146,14 +146,11 @@ def main():
                         (full, device_id, variant, digest),
                     )
 
-                    # QC flag only for _000
-                    qc_flag = 0
-                    if variant == "000":
-                        qc_rate = cfg["QC_RATE"]
-                        qc_flag = 1 if random.random() < qc_rate else 0
-                        con.execute("UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full))
+                    qc_rate = cfg["QC_RATE"]
+                    qc_flag = 1 if random.random() < qc_rate else 0
+                    con.execute("UPDATE images SET qc_flag=? WHERE path=?", (qc_flag, full))
 
-                    # seed exactly one review row for every image (both 000 and 001)
+                    # seed exactly one review row for every image
                     con.execute(
                         """
                         INSERT OR IGNORE INTO reviews(image_id, status)
@@ -162,7 +159,7 @@ def main():
                         (full,),
                     )
 
-                    # if QC _000, add the second row
+                    # if QC, add the second row
                     if qc_flag:
                         con.execute(
                             """
@@ -180,7 +177,7 @@ def main():
                 print(f"[skip] {full}: {e}")
 
     print(f"Added {added} qualifying images.")
-    print(f"Skipped {skipped} non-_00(0/1) files.")
+    print(f"Skipped {skipped} files.")
     print(f"Skipped {duplicate} duplicate files")
 
 

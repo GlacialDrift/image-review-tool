@@ -191,7 +191,7 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
               JOIN images i ON i.image_id = r.image_id
               WHERE r.status='unassigned'
                 AND i.qc_flag=1
-                AND i.variant = '000'
+                -- AND i.variant = '000'
                 -- don't give both QC rows of the same image to the same user
                 AND NOT EXISTS (
                   SELECT 1 FROM reviews r2
@@ -218,7 +218,7 @@ def assign_batch(con, user: str, n: int, qc_rate: float = 0.10):
               FROM reviews r
               JOIN images i ON i.image_id = r.image_id
               WHERE r.status='unassigned'
-                AND i.variant = '000'
+                -- AND i.variant = '000'
                 AND (
                       i.qc_flag=0
                    OR ? > 0  -- allow topping up with QC if we couldn't get enough
