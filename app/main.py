@@ -370,9 +370,13 @@ class App(tk.Tk):
                 # NO–SKIP–SKIP rule: check last three completed results for this device
                 history = get_device_review_results(self.con, device_id)
                 # history is list of (variant, result), e.g. [('000','no'), ('001','skip'), ('002','skip')]
+                # if 'yes' was decided at any point, the entire device was finalized (above). Therefore, it does not
+                # matter what the third-to-last decision was. If there have been 3 decisions (none of which were 'yes')
+                # and the last two were 'skip', the entire device can be finalized as 'no' based on the repeated-skip
+                # pattern.
                 if len(history) >= 3:
-                    last_three = [r for (_, r) in history[-3:]]
-                    if last_three == ["no", "skip", "skip"]:
+                    last_two = [r for (_, r) in history[-2:]]
+                    if last_two == ["skip", "skip"]:
                         finalize_device_no_by_pattern(
                             self.con,
                             device_id=device_id,
