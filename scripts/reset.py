@@ -1,5 +1,5 @@
 """
-Reset reviews (and their annotations) for all images that share device IDs with a provided list of images.
+Reset devices, reviews, and their annotations for all images that share device IDs with a provided list of images.
 
 Goal: "as if never reviewed" — i.e., clear decisions and assignment metadata and remove any annotations for those reviews.
 
@@ -11,26 +11,18 @@ What it does:
   - device_id (optional; if present, it's used directly)
 - Loads DB path from your existing config (config.py/config.ini).
 - Finds all device_ids for the listed images, then finds *all* reviews for *all* images with those device_ids.
-- Deletes annotations for those review_ids and resets the review rows:
+- Deletes annotations for those review_ids
+- Resets the review rows:
     status='unassigned', result=NULL, assigned_to=NULL, decided_at=NULL, batch_id=NULL, standard_version=NULL
+- Resets the devices rows:
+    final_result='unknown', final_decision_source_image_id=NULL, decided_at=NULL, notes=NULL
 - Provides --dry-run to preview changes.
 
 Usage:
-    python reset_reviews_by_device.py \
-        --csv /path/to/targets.csv \
-        --confirm                          # actually execute
+    python reset_reviews_by_device.py --confirm  # actually execute
 
     # Preview only
-    python reset_reviews_by_device.py --csv targets.csv --dry-run
-
-CSV examples:
-    image_id\n12345\n67890
-
-    path\nsubdir/12345678901_000.jpg\nsubdir/12345678901_001.jpg
-
-    filename\n12345678901_000.jpg\n12345678901_001.jpg
-
-    device_id\nABC123\nXYZ999
+    python reset_reviews_by_device.py --dry-run
 """
 from __future__ import annotations
 import argparse

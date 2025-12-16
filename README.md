@@ -1,6 +1,6 @@
 ---
 Author: Mike Harris  
-Version: 2.0.0
+Version: 2.0.2-a.1
 GitHub: https://github.com/GlacialDrift/image-review-tool  
 ---
 
@@ -32,6 +32,7 @@ and auto-skip rules that reduce manual review time by 50-70% in real production 
   - **Repeated–SKIP Rule:**
     - If the last three decisions for a device follow: `no → skip → skip` then the remaining images are auto-skipped 
     - Device is finalized as no. 
+    - This rule has been removed in v2.0.2-a.1
   - **Exhaustion Rule:**
     - If all images are reviewed and none were “yes,” the device is auto-finalized as no.
 - Images are uniquely identified by their content hash. Duplicate files — even in different folders — are added only once.
