@@ -251,7 +251,8 @@ def main():
                     print(f"[ERROR] Failed to save {out_path}: {e}")
                     n_missing += 1
                     continue
-            print(f"[WRITE] {out_path}  (points: {len(pts_px)})")
+            if(n_written%100 == 0):
+                print(f"Wrote {n_written} files")
             n_written += 1
 
             # Log CSV row (even on skip, to have a manifest)
