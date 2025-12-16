@@ -169,6 +169,29 @@ def reset_reviews_and_annotations(conn: sqlite3.Connection, review_ids: List[int
         )
     return len(review_ids), int(ann_cnt)
 
+def reset_device_decisions(conn: sqlite3.Connection, device_ids: List[int], dry_run: bool) -> int:
+    if not device_ids:
+        return 0
+    placeholders = ",".join(["?"] * len(device_ids))
+
+    if dry_run:
+        return len(device_ids)
+
+    with conn:
+        conn.execute("PRAGMA defer_foreign_keys=ON")
+
+        conn.execute(
+            f"""
+            UPDATE devices
+                SET final_result='unknown',
+                    final_decision_source_image_id=NULL,
+                    decided_at=NULL,
+                    notes=NULL
+            WHERE device_id IN ({placeholders})
+            """,
+            tuple(device_ids),
+        )
+    return len(device_ids)
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -200,17 +223,23 @@ def main():
     # print(f"Resolved device_ids: {sorted(device_ids)}")
     print(f"Affected reviews: {len(rids)} (annotations will be deleted for these)")
 
+    dids: list[int] = []
+    for d in device_ids:
+        dids.append(int(d))
+
     if args.dry_run:
         # Show a preview of counts
         n_reviews, n_annotations = reset_reviews_and_annotations(conn, rids, dry_run=True)
-        print(f"DRY RUN: Would reset {n_reviews} reviews and delete {n_annotations} annotations.")
+        n_devices = reset_device_decisions(conn, dids, dry_run=True)
+        print(f"DRY RUN: Would reset {n_devices} devices, reset {n_reviews} reviews, and delete {n_annotations} annotations.")
         return
 
     if not args.confirm:
         raise SystemExit("Refusing to modify DB without --confirm. Run with --dry-run first to preview.")
 
     n_reviews, n_annotations = reset_reviews_and_annotations(conn, rids, dry_run=False)
-    print(f"DONE: Reset {n_reviews} reviews and deleted {n_annotations} annotations.")
+    n_devices = reset_device_decisions(conn, dids, dry_run=False)
+    print(f"DONE: Reset {n_devices} devices, reset {n_reviews} reviews, and deleted {n_annotations} annotations.")
 
 
 if __name__ == "__main__":
