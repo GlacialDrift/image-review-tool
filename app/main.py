@@ -96,6 +96,7 @@ class App(tk.Tk):
         self.batch_id = None
         self.items = []
         self.index = 0
+        self.remaining = 0
 
         # ------------------------------------------------------------------
         # UI Layout
@@ -147,6 +148,15 @@ class App(tk.Tk):
         hint = " | ".join(mparts) if mparts else "mouse: (not configured)"
         return f"Keys — {pretty(self.cfg['RESULT_BINDINGS'])}  ||  {hint}  ||  Esc: release & exit"
 
+    def _remaining_reviews(self) -> int:
+        """Return count of reviews that still need a decision (result IS NULL)."""
+        cur = self.con.execute(
+            "SELECT COUNT(*) FROM reviews WHERE result IS NULL"
+        )
+        (cnt,) = cur.fetchone()
+        return int(cnt)
+
+
     # ----------------------------------------------------------------------
     # Core workflow
     # ----------------------------------------------------------------------
@@ -177,9 +187,14 @@ class App(tk.Tk):
             self._current_image_size = (dw, dh)
 
             self.status.configure(
-                text=f"User: {self.user} | Batch: {self.batch_id[:8]} | "
-                     f"Device: {device_id} | {self.index + 1}/{len(self.items)} | "
-                     f"{os.path.basename(path)}{' | QC' if qc_flag else ''}"
+                text=(
+                    f"User: {self.user} | "
+                    f"Batch: {self.batch_id[:8]} | "
+                    f"Device: {device_id} | "
+                    f"{self.index + 1}/{len(self.items)} | "
+                    f"{os.path.basename(path)}{' | QC' if qc_flag else ''} | "
+                    f"Remaining Images: {self.remaining}"
+                )
             )
         except Exception as e:
             messagebox.showerror("Load error", f"{path}\n{e}")
@@ -300,6 +315,7 @@ class App(tk.Tk):
                 messagebox.showwarning("Cleanup", f"Device cleanup failed: {e}")
             self.destroy()
             return
+        self.remaining = self._remaining_reviews()
         self.refresh()
 
     # ----------------------------------------------------------------------
@@ -342,6 +358,8 @@ class App(tk.Tk):
 
         # Current item layout: (review_id, image_id, path, device_id, qc_flag)
         review_id, image_id, path, device_id, _ = self.items[self.index]
+
+        self.remaining -= 1
 
         # 1) Record the decision for this specific review row
         record_decision(
