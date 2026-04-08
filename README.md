@@ -1,7 +1,8 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/GlacialDrift/image-review-tool)
+
 ---
 Author: Mike Harris  
 Version: 2.0.2-a.1
-GitHub: https://github.com/GlacialDrift/image-review-tool  
 ---
 
 # Image Review Tool (SQLite + Tkinter)
