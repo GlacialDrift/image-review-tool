@@ -6,9 +6,7 @@ A configurable fraction of images are flagged for QC review (duplicate
 review by a second user) and receive a second review row to enable inter-rater consistency checks.
 
 Usage:
-    python -m init_db
-or:
-    python init_db.py
+    python -m scripts.init_db
 
 Behavior:
   * Reads paths and parameters from `config.ini` via `app.config.load_config()`.

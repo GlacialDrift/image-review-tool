@@ -87,7 +87,7 @@ SMB or WAL mode, simply put everything on a shared network drive
 ### Creating the Database
 Run:
 ```bash
-python init_db.py
+python -m scripts.init_db.py
 ```
 ### Functionality
 
